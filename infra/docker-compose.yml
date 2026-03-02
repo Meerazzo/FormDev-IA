@@ -1,10 +1,14 @@
 services:
   inference:
     image: vllm/vllm-openai:latest
-    command: >
-      --model ${MODEL_ID}
+    entrypoint: []
+    command:
+      vllm serve ${MODEL_ID}
+      --served-model-name ${MODEL_ID}
       --dtype ${DTYPE}
       --max-model-len ${MAX_MODEL_LEN}
+      --gpu-memory-utilization 0.92
+      --generation-config vllm
       --host 0.0.0.0
       --port ${VLLM_PORT}
     volumes:

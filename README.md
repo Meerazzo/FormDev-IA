@@ -90,10 +90,48 @@ docker compose -f infra/docker-compose.yml logs -f api
 docker compose -f infra/docker-compose.yml logs -f inference
 ```
 
+Chemin du fichier de logs Docker (API) :
+```bash
+CID=$(docker ps -qf "name=infra-api-1"); docker inspect --format='{{.LogPath}}' "$CID"
+```
+(Le fichier est généralement sous /var/lib/docker/containers/<id>/<id>-json.log.)
+
+
 3) État GPU :
 ```bash
 nvidia-smi
 ```
+
+## Exploitation (scripts)
+
+Les scripts utilisent Docker.  
+Sur ce serveur, Docker est accessible uniquement en root.
+
+
+Exécution type :
+
+```bash
+su -
+cd /home/meara/Formdev_IA
+```
+
+Commandes principales :
+
+./scripts/up.sh        # build + start
+./scripts/restart.sh   # restart services
+./scripts/down.sh      # stop services
+./scripts/status.sh    # état des containers
+./scripts/logs.sh api
+./scripts/logs.sh inference
+
+Smoke test : 
+```bash
+API_KEY="FormdevINF26" ./scripts/smoke_test.sh
+``` 
+Bench performance : 
+```bash
+API_KEY="FormdevINF26" N=20 ./scripts/bench.sh
+``` 
 
 ## Évolution (Projets 1/2/3)
 

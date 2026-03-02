@@ -1,0 +1,69 @@
+{
+  "test": {
+    "id": "P2_A_enrich_word_titles_beginner",
+    "project": "P2_ENRICH",
+    "expects": {
+      "type": "text"
+    },
+    "max_tokens": 300,
+    "prompt": "Enrichis ce texte pour un programme de formation. Ton style doit être pédagogique et professionnel.\nObjectif: produire un paragraphe clair (5 à 8 phrases), sans listes.\n\nTexte de départ: \"Travailler les titres dans Word\"\nContexte: Formation Word, niveau débutant."
+  },
+  "summary": {
+    "id": "P2_A_enrich_word_titles_beginner",
+    "project": "P2_ENRICH",
+    "repeat": 3,
+    "latency_ms": {
+      "mean": 17110.59956700774,
+      "p95": 17121.8629861949,
+      "min": 17103.59050304396,
+      "max": 17123.80270799622
+    },
+    "http_ok_rate": 1.0,
+    "json_ok_rate": null,
+    "must_contain_ok_rate": null
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "latency_ms": 17123.80270799622,
+      "raw_body": "{\"id\":\"chatcmpl-bfc267ad4eae0d21\",\"object\":\"chat.completion\",\"created\":1772461419,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour tout utilisateur débutant, car elle permet d'améliorer la lisibilité et l'organisation du document. Tout d'abord, il est important de comprendre que les titres en Word ne sont pas simplement du texte en police plus grande ; ils sont conçus comme des éléments de structure qui offrent une hiérarchie claire aux différents niveaux de votre document. Pour créer un titre, vous pouvez utiliser la fonctionnalité \\\"Titre\\\" située sur la barre d'outils au-dessus de la zone de saisie. En cliquant dessus, vous pouvez sélectionner le niveau de titre approprié, allant de \\\"Titre 1\\\" pour les titres principaux à \\\"Titre 9\\\" pour les sous-titres inférieurs. Ces niveaux de titre sont cruciaux car ils permettent à Word d'automatiser plusieurs tâches utiles, telles que la création d'un sommaire ou l'ajustement automatique de la mise en page pour s'adapter aux différentes tailles de titres. De plus, en utilisant les titres correctement, vous faciliterez également la lecture et la navigation dans votre document, ce qui est particulièrement bénéfique pour les documents longs ou complexes. En fin de compte, maîtriser l'utilisation des tit\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"length\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":99,\"total_tokens\":399,\"completion_tokens\":300,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour tout utilisateur débutant, car elle permet d'améliorer la lisibilité et l'organisation du document. Tout d'abord, il est important de comprendre que les titres en Word ne sont pas simplement du texte en police plus grande ; ils sont conçus comme des éléments de structure qui offrent une hiérarchie claire aux différents niveaux de votre document. Pour créer un titre, vous pouvez utiliser la fonctionnalité \"Titre\" située sur la barre d'outils au-dessus de la zone de saisie. En cliquant dessus, vous pouvez sélectionner le niveau de titre approprié, allant de \"Titre 1\" pour les titres principaux à \"Titre 9\" pour les sous-titres inférieurs. Ces niveaux de titre sont cruciaux car ils permettent à Word d'automatiser plusieurs tâches utiles, telles que la création d'un sommaire ou l'ajustement automatique de la mise en page pour s'adapter aux différentes tailles de titres. De plus, en utilisant les titres correctement, vous faciliterez également la lecture et la navigation dans votre document, ce qui est particulièrement bénéfique pour les documents longs ou complexes. En fin de compte, maîtriser l'utilisation des tit",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 2,
+      "http_status": 200,
+      "latency_ms": 17103.59050304396,
+      "raw_body": "{\"id\":\"chatcmpl-b35ae2a43a4c2841\",\"object\":\"chat.completion\",\"created\":1772461436,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour organiser et améliorer la lisibilité de vos documents. Tout d'abord, il est important de comprendre que les titres dans Word ne sont pas simplement du texte en gras ou en italique ; ils sont des éléments structuraux qui permettent de créer une hiérarchie dans votre document. Ensuite, vous devriez familiariser-vous avec les styles de titre intégrés dans Word, qui facilitent non seulement l'apparence esthétique mais aussi l'organisation de votre contenu. Par exemple, en utilisant le style \\\"Titre 1\\\" pour votre titre principal et les styles \\\"Titre 2\\\" et \\\"Titre 3\\\" pour les sous-titres, vous pouvez créer une structure logique qui sera automatiquement reflétée dans la table des matières si vous l'utilisez. De plus, ces styles de titre permettent une mise en forme cohérente tout au long de votre document, ce qui est particulièrement utile pour des documents longs ou complexes. Enfin, il est crucial de savoir comment utiliser les outils de mise en page et de formatage associés aux titres, comme les marges et les espacements, pour obtenir un aspect professionnel et bien structuré. En maîtrisant ces techniques, vous pourrez produire des documents clairs\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"length\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":99,\"total_tokens\":399,\"completion_tokens\":300,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour organiser et améliorer la lisibilité de vos documents. Tout d'abord, il est important de comprendre que les titres dans Word ne sont pas simplement du texte en gras ou en italique ; ils sont des éléments structuraux qui permettent de créer une hiérarchie dans votre document. Ensuite, vous devriez familiariser-vous avec les styles de titre intégrés dans Word, qui facilitent non seulement l'apparence esthétique mais aussi l'organisation de votre contenu. Par exemple, en utilisant le style \"Titre 1\" pour votre titre principal et les styles \"Titre 2\" et \"Titre 3\" pour les sous-titres, vous pouvez créer une structure logique qui sera automatiquement reflétée dans la table des matières si vous l'utilisez. De plus, ces styles de titre permettent une mise en forme cohérente tout au long de votre document, ce qui est particulièrement utile pour des documents longs ou complexes. Enfin, il est crucial de savoir comment utiliser les outils de mise en page et de formatage associés aux titres, comme les marges et les espacements, pour obtenir un aspect professionnel et bien structuré. En maîtrisant ces techniques, vous pourrez produire des documents clairs",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 3,
+      "http_status": 200,
+      "latency_ms": 17104.405489983037,
+      "raw_body": "{\"id\":\"chatcmpl-bb0983a97e9d1698\",\"object\":\"chat.completion\",\"created\":1772461453,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour organiser et rendre lisible votre document. Tout d'abord, il est important de comprendre que Word offre des styles de titres prédéfinis qui facilitent la mise en forme et l'organisation de votre texte. En appliquant le style de titre, vous non seulement personnalisez l'apparence du texte, mais vous aussi vous permettez à Word de créer un sommaire automatique, ce qui est particulièrement utile pour les documents longs. Par exemple, si vous utilisez le style de titre 1 pour votre titre principal et le style de titre 2 pour vos sous-titres, Word générera un sommaire qui reflète cette hiérarchie. De plus, les titres formatés avec ces styles sont facilement identifiables grâce à leur mise en page distinctive, ce qui améliore la lisibilité globale de votre document. Pour appliquer un style de titre, sélectionnez le texte, cliquez sur le bouton \\\"Styles\\\" dans la barre d'outils en haut, puis choisissez le style approprié. Enfin, pour activer la fonction de sommaire automatique, allez dans l'onglet \\\"Outils de rédaction\\\" et cliquez sur \\\"Sommaire\\\". Cette fonctionnalité permet de créer rapidement un somma\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"length\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":99,\"total_tokens\":399,\"completion_tokens\":300,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "Travailler efficacement avec les titres dans Microsoft Word est une compétence essentielle pour organiser et rendre lisible votre document. Tout d'abord, il est important de comprendre que Word offre des styles de titres prédéfinis qui facilitent la mise en forme et l'organisation de votre texte. En appliquant le style de titre, vous non seulement personnalisez l'apparence du texte, mais vous aussi vous permettez à Word de créer un sommaire automatique, ce qui est particulièrement utile pour les documents longs. Par exemple, si vous utilisez le style de titre 1 pour votre titre principal et le style de titre 2 pour vos sous-titres, Word générera un sommaire qui reflète cette hiérarchie. De plus, les titres formatés avec ces styles sont facilement identifiables grâce à leur mise en page distinctive, ce qui améliore la lisibilité globale de votre document. Pour appliquer un style de titre, sélectionnez le texte, cliquez sur le bouton \"Styles\" dans la barre d'outils en haut, puis choisissez le style approprié. Enfin, pour activer la fonction de sommaire automatique, allez dans l'onglet \"Outils de rédaction\" et cliquez sur \"Sommaire\". Cette fonctionnalité permet de créer rapidement un somma",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    }
+  ]
+}

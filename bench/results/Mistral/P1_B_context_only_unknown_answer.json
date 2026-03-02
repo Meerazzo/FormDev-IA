@@ -1,0 +1,70 @@
+{
+  "test": {
+    "id": "P1_B_context_only_unknown_answer",
+    "project": "P1_RAG_SIM",
+    "expects": {
+      "type": "text",
+      "must_contain": "Je ne sais pas d'après les documents fournis."
+    },
+    "max_tokens": 120,
+    "prompt": "Tu es un assistant support. Tu dois répondre UNIQUEMENT avec le CONTEXTE ci-dessous.\nSi le contexte ne contient pas la réponse, réponds exactement : \"Je ne sais pas d'après les documents fournis.\"\n\nCONTEXTE:\n[source:A] \"Les titres Word permettent de structurer un document et de générer une table des matières.\"\n\nQUESTION:\nQuel est le délai de paiement des factures ?"
+  },
+  "summary": {
+    "id": "P1_B_context_only_unknown_answer",
+    "project": "P1_RAG_SIM",
+    "repeat": 3,
+    "latency_ms": {
+      "mean": 903.8977319917952,
+      "p95": 907.3062160809059,
+      "min": 901.8230350338854,
+      "max": 907.8989999834448
+    },
+    "http_ok_rate": 1.0,
+    "json_ok_rate": null,
+    "must_contain_ok_rate": 1.0
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "latency_ms": 907.8989999834448,
+      "raw_body": "{\"id\":\"chatcmpl-8f7e09da399c4f95\",\"object\":\"chat.completion\",\"created\":1772462457,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Je ne sais pas d'après les documents fournis.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":124,\"total_tokens\":139,\"completion_tokens\":15,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Je ne sais pas d'après les documents fournis.",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": "Je ne sais pas d'après les documents fournis.",
+      "must_contain_ok": true,
+      "parse_error": null
+    },
+    {
+      "attempt": 2,
+      "http_status": 200,
+      "latency_ms": 901.9711609580554,
+      "raw_body": "{\"id\":\"chatcmpl-8235696062eab5cc\",\"object\":\"chat.completion\",\"created\":1772462458,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Je ne sais pas d'après les documents fournis.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":124,\"total_tokens\":139,\"completion_tokens\":15,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Je ne sais pas d'après les documents fournis.",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": "Je ne sais pas d'après les documents fournis.",
+      "must_contain_ok": true,
+      "parse_error": null
+    },
+    {
+      "attempt": 3,
+      "http_status": 200,
+      "latency_ms": 901.8230350338854,
+      "raw_body": "{\"id\":\"chatcmpl-80f497c7cd915a0b\",\"object\":\"chat.completion\",\"created\":1772462459,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Je ne sais pas d'après les documents fournis.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":124,\"total_tokens\":139,\"completion_tokens\":15,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Je ne sais pas d'après les documents fournis.",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": "Je ne sais pas d'après les documents fournis.",
+      "must_contain_ok": true,
+      "parse_error": null
+    }
+  ]
+}

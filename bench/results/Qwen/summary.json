@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "suite_name": "formdev_lot0_model_eval_v1",
+    "api_url": "http://localhost:8080/v1/chat",
+    "model_payload": "",
+    "repeat": 3,
+    "timeout_s": 180,
+    "started_at": "2026-03-02T15:23:31"
+  },
+  "global_latency_ms": {
+    "mean": 6309.274619167101,
+    "p95": 17107.315072685014,
+    "min": 799.4974250323139,
+    "max": 17123.80270799622
+  },
+  "tests": [
+    {
+      "id": "P1_A_context_only_password_reset",
+      "project": "P1_RAG_SIM",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 2007.4628896545619,
+        "p95": 2135.4944502585568,
+        "min": 1928.6452300148085,
+        "max": 2157.6501329545863
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": null,
+      "must_contain_ok_rate": null
+    },
+    {
+      "id": "P1_B_context_only_unknown_answer",
+      "project": "P1_RAG_SIM",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 802.0206836711926,
+        "p95": 805.4734418052249,
+        "min": 799.4974250323139,
+        "max": 806.0212240088731
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": null,
+      "must_contain_ok_rate": 1.0
+    },
+    {
+      "id": "P2_A_enrich_word_titles_beginner",
+      "project": "P2_ENRICH",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 17110.59956700774,
+        "p95": 17121.8629861949,
+        "min": 17103.59050304396,
+        "max": 17123.80270799622
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": null,
+      "must_contain_ok_rate": null
+    },
+    {
+      "id": "P2_B_enrich_tables_intermediate_constraints",
+      "project": "P2_ENRICH",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 12688.181025674567,
+        "p95": 13676.477233693004,
+        "min": 11032.357292016968,
+        "max": 13716.573318990413
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": null,
+      "must_contain_ok_rate": null
+    },
+    {
+      "id": "P3_A_segmentation_json",
+      "project": "P3_SURVEYS",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 1712.3608200151164,
+        "p95": 1715.5461654125247,
+        "min": 1710.1247740210965,
+        "max": 1716.0629960126244
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": 1.0,
+      "must_contain_ok_rate": null
+    },
+    {
+      "id": "P3_B_classification_json",
+      "project": "P3_SURVEYS",
+      "repeat": 3,
+      "latency_ms": {
+        "mean": 3535.0227289794325,
+        "p95": 3540.7339474884793,
+        "min": 3531.202719954308,
+        "max": 3541.6842509876005
+      },
+      "http_ok_rate": 1.0,
+      "json_ok_rate": 1.0,
+      "must_contain_ok_rate": null
+    }
+  ]
+}

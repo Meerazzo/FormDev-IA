@@ -1,4 +1,6 @@
+import logging
 import os
+import time
 import uuid
 from typing import Any, Dict, Tuple
 
@@ -59,6 +61,25 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[f"{RATE_LIMIT_RPM
 
 app = FastAPI(title="FormDev IA - Gateway (Lot 0)")
 
+# -----------------------------------------------------------------------------
+# Journalisation (logs)
+# -----------------------------------------------------------------------------
+# Pour Lot 0 on reste simple : logs texte lisibles dans `docker compose logs -f api`.
+# On log les requêtes et les erreurs non gérées.
+logger = logging.getLogger("formdev_ia_api")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Log stacktrace côté serveur, réponse générique côté client
+    req_id = getattr(request.state, "request_id", "-")
+    logger.exception("Erreur non gérée request_id=%s path=%s", req_id, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
 
 # -----------------------------------------------------------------------------
 # Gestion du rate limit
@@ -69,14 +90,37 @@ def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 # -----------------------------------------------------------------------------
-# Middleware simple : X-Request-Id pour tracer une requête bout en bout
+# Middleware : X-Request-Id + logs d'accès
 # -----------------------------------------------------------------------------
 @app.middleware("http")
-async def add_request_id(request: Request, call_next):
+async def request_trace_and_access_log(request: Request, call_next):
     request.state.request_id = str(uuid.uuid4())
-    response = await call_next(request)
-    response.headers["X-Request-Id"] = request.state.request_id
-    return response
+    start = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        status_code = getattr(response, "status_code", "-") if "response" in locals() else "-"
+
+        # Tentative de récupérer le client_id via la clé API (si format client:key)
+        api_key = request.headers.get("x-api-key")
+        client_id = KEY_TO_CLIENT.get(api_key) if api_key else None
+
+        logger.info(
+            "request method=%s path=%s status=%s duration_ms=%.1f request_id=%s client_id=%s",
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+            request.state.request_id,
+            client_id or "-",
+        )
+
+        # Ajoute toujours le request_id dans la réponse (quand on en a une)
+        if "response" in locals():
+            response.headers["X-Request-Id"] = request.state.request_id
 
 
 # -----------------------------------------------------------------------------

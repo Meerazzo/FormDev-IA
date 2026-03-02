@@ -1,0 +1,69 @@
+{
+  "test": {
+    "id": "P2_B_enrich_tables_intermediate_constraints",
+    "project": "P2_ENRICH",
+    "expects": {
+      "type": "text"
+    },
+    "max_tokens": 350,
+    "prompt": "Enrichis ce texte pour un programme de formation. Ton style doit être professionnel.\nContraintes:\n- 1 paragraphe (6 à 10 phrases)\n- mentionner objectifs pédagogiques + bénéfices pour l’apprenant\n- ne pas inventer de fonctionnalités inexistantes\n\nTexte de départ: \"Créer des tableaux et les mettre en forme\"\nContexte: Formation Word, niveau intermédiaire."
+  },
+  "summary": {
+    "id": "P2_B_enrich_tables_intermediate_constraints",
+    "project": "P2_ENRICH",
+    "repeat": 3,
+    "latency_ms": {
+      "mean": 14809.639719004432,
+      "p95": 17751.66851511458,
+      "min": 11625.69686200004,
+      "max": 18089.182857016567
+    },
+    "http_ok_rate": 1.0,
+    "json_ok_rate": null,
+    "must_contain_ok_rate": null
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "latency_ms": 18089.182857016567,
+      "raw_body": "{\"id\":\"chatcmpl-a716855d4b2d80e7\",\"object\":\"chat.completion\",\"created\":1772462496,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Dans le cadre de notre formation intermédiaire Microsoft Word, explorons la fonctionnalité de création et de mise en forme de tableaux, compacte mais très utile pour structurer et visualiser les données.\\n\\nLes objectifs pédagogiques de cette unité sont multiples: apprendre à créer rapidement des tableaux dans Word, à accélérer le traitement des données, ainsi qu'à mettre en évidence les informations les plus importantes en les mettant en forme.\\n\\nLe bénéfice principal pour l'apprenant est de pouvoir structurer sa recherche, son travail ou sa rédaction en créant organisément des tables de données mais également de pouvoir partager, imprimer ou présenter ses données sous une forme simple et claire afin de faciliter la compréhension pour autrui.\\n\\nPar ailleurs, la commande de mise en forme des tableaux vous permettra de personnaliser votre table unique ou multiple, grâce à la mise en forme (polices, tailles, couleurs, bordures, couleur de fond, etc.).\\n\\nEn résumé, cette unité vous permettra de créer des tables bien organisées, de la survivre en structuresDATA et de présenter des données sous forme efficace, d'un point de vue visuel comme de celui de la fonctionnalité.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":116,\"total_tokens\":437,\"completion_tokens\":321,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Dans le cadre de notre formation intermédiaire Microsoft Word, explorons la fonctionnalité de création et de mise en forme de tableaux, compacte mais très utile pour structurer et visualiser les données.\n\nLes objectifs pédagogiques de cette unité sont multiples: apprendre à créer rapidement des tableaux dans Word, à accélérer le traitement des données, ainsi qu'à mettre en évidence les informations les plus importantes en les mettant en forme.\n\nLe bénéfice principal pour l'apprenant est de pouvoir structurer sa recherche, son travail ou sa rédaction en créant organisément des tables de données mais également de pouvoir partager, imprimer ou présenter ses données sous une forme simple et claire afin de faciliter la compréhension pour autrui.\n\nPar ailleurs, la commande de mise en forme des tableaux vous permettra de personnaliser votre table unique ou multiple, grâce à la mise en forme (polices, tailles, couleurs, bordures, couleur de fond, etc.).\n\nEn résumé, cette unité vous permettra de créer des tables bien organisées, de la survivre en structuresDATA et de présenter des données sous forme efficace, d'un point de vue visuel comme de celui de la fonctionnalité.",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 2,
+      "http_status": 200,
+      "latency_ms": 14714.03943799669,
+      "raw_body": "{\"id\":\"chatcmpl-ad597811c28f6e14\",\"object\":\"chat.completion\",\"created\":1772462514,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Title: Intermediate Microsoft Word Formation: Mastering Table Creation and Formatting\\n\\nObjective:\\nThis program aims to equip intermediary users with advanced table creation and formatting techniques within Microsoft Word, enhancing productivity and data presentation skills. Through comprehensive instructions and practical exercises, participants will learn to optimize table structures, incorporate conditional formatting, and link tables with other Office applications, resulting in professional and visually appealing documents.\\n\\nBenefits for the Learner:\\nUpon completion of this course, participants will be empowered to:\\n\\n1. Create tables more efficiently by utilizing Word's tools and shortcuts.\\n2. Enhance the layout and design of tables, using various styles and formatting options.\\n3. Improve the readability and organization of data by applying conditional formatting.\\n4. Consolidate and link tables across multiple documents as needed, aiding in collaboration and data analysis.\\n5. Leverage tables for effective data presentations in business reports or academic papers.\\n\\nBy mastering these skills, learners will streamline their work processes, enhance their professional output, and boost their overall competence in Microsoft Word. Join us and take your Word expertise to the next level!\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":116,\"total_tokens\":377,\"completion_tokens\":261,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Title: Intermediate Microsoft Word Formation: Mastering Table Creation and Formatting\n\nObjective:\nThis program aims to equip intermediary users with advanced table creation and formatting techniques within Microsoft Word, enhancing productivity and data presentation skills. Through comprehensive instructions and practical exercises, participants will learn to optimize table structures, incorporate conditional formatting, and link tables with other Office applications, resulting in professional and visually appealing documents.\n\nBenefits for the Learner:\nUpon completion of this course, participants will be empowered to:\n\n1. Create tables more efficiently by utilizing Word's tools and shortcuts.\n2. Enhance the layout and design of tables, using various styles and formatting options.\n3. Improve the readability and organization of data by applying conditional formatting.\n4. Consolidate and link tables across multiple documents as needed, aiding in collaboration and data analysis.\n5. Leverage tables for effective data presentations in business reports or academic papers.\n\nBy mastering these skills, learners will streamline their work processes, enhance their professional output, and boost their overall competence in Microsoft Word. Join us and take your Word expertise to the next level!",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 3,
+      "http_status": 200,
+      "latency_ms": 11625.69686200004,
+      "raw_body": "{\"id\":\"chatcmpl-bf2da8eea922fa98\",\"object\":\"chat.completion\",\"created\":1772462529,\"model\":\"mistralai/Mistral-7B-Instruct-v0.3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\" Title: Intermediate Microsoft Word Training: Mastering Table Creation and Formatting for Enhanced Productivity\\n\\nObjective: This Intermediate Word training programme is designed to equip participants with advanced skills in crafting and styling tables, thereby increasing efficiency and improving document presentation in Microsoft Word.\\n\\nPedagogical Objectives:\\n1. Comprehensive understanding of table structures and their application within Word documents.\\n2. Acquisition of techniques for inserting, formatting, and customizing tables as per specific needs.\\n3. Hands-on experience with features such as auto-fill, row, and column manipulation, and table styles.\\n\\nBenefits for the Learner:\\n1. Improved document organization and clarity.\\n2. Enhanced professional appearance through polished table designs.\\n3. Time-saving ability to manage and format complex tabular data effortlessly.\\n4. Increased overall productivity in document creation and editing tasks.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":116,\"total_tokens\":322,\"completion_tokens\":206,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": " Title: Intermediate Microsoft Word Training: Mastering Table Creation and Formatting for Enhanced Productivity\n\nObjective: This Intermediate Word training programme is designed to equip participants with advanced skills in crafting and styling tables, thereby increasing efficiency and improving document presentation in Microsoft Word.\n\nPedagogical Objectives:\n1. Comprehensive understanding of table structures and their application within Word documents.\n2. Acquisition of techniques for inserting, formatting, and customizing tables as per specific needs.\n3. Hands-on experience with features such as auto-fill, row, and column manipulation, and table styles.\n\nBenefits for the Learner:\n1. Improved document organization and clarity.\n2. Enhanced professional appearance through polished table designs.\n3. Time-saving ability to manage and format complex tabular data effortlessly.\n4. Increased overall productivity in document creation and editing tasks.",
+      "json_expected": false,
+      "json_ok": null,
+      "json_parse_mode": null,
+      "json_obj": null,
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    }
+  ]
+}

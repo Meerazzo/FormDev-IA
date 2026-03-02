@@ -1,0 +1,124 @@
+{
+  "test": {
+    "id": "P3_B_classification_json",
+    "project": "P3_SURVEYS",
+    "expects": {
+      "type": "json",
+      "schema_hint": "object.items[].{text,sentiment,category}"
+    },
+    "max_tokens": 260,
+    "prompt": "Pour chaque point, attribue:\n- sentiment: \"positive\" | \"negative\" | \"neutral\"\n- category: une valeur parmi [\"locaux\",\"formateur\",\"contenu\",\"logistique\",\"restauration\",\"autre\"]\n\nRends uniquement du JSON valide, sans texte autour.\nFormat attendu:\n{\"items\":[{\"text\":\"...\",\"sentiment\":\"...\",\"category\":\"...\"}]}\n\nPoints:\n1) \"Pas assez chauffé\"\n2) \"Le café était mauvais\"\n3) \"Les salles étaient confortables\""
+  },
+  "summary": {
+    "id": "P3_B_classification_json",
+    "project": "P3_SURVEYS",
+    "repeat": 3,
+    "latency_ms": {
+      "mean": 2054.0627033333294,
+      "p95": 2067.591883474961,
+      "min": 2045.4447470256127,
+      "max": 2069.896933971904
+    },
+    "http_ok_rate": 1.0,
+    "json_ok_rate": 1.0,
+    "must_contain_ok_rate": null
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "latency_ms": 2069.896933971904,
+      "raw_body": "{\"id\":\"chatcmpl-b135ef80108b7a8e\",\"object\":\"chat.completion\",\"created\":1772470290,\"model\":\"Qwen/Qwen2.5-7B-Instruct-AWQ\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"items\\\": [\\n    {\\n      \\\"text\\\": \\\"Pas assez chauffé\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"logistique\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Le café était mauvais\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"restauration\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Les salles étaient confortables\\\",\\n      \\\"sentiment\\\": \\\"positive\\\",\\n      \\\"category\\\": \\\"locaux\\\"\\n    }\\n  ]\\n}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":141,\"total_tokens\":246,\"completion_tokens\":105,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\n  \"items\": [\n    {\n      \"text\": \"Pas assez chauffé\",\n      \"sentiment\": \"negative\",\n      \"category\": \"logistique\"\n    },\n    {\n      \"text\": \"Le café était mauvais\",\n      \"sentiment\": \"negative\",\n      \"category\": \"restauration\"\n    },\n    {\n      \"text\": \"Les salles étaient confortables\",\n      \"sentiment\": \"positive\",\n      \"category\": \"locaux\"\n    }\n  ]\n}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "items": [
+          {
+            "text": "Pas assez chauffé",
+            "sentiment": "negative",
+            "category": "logistique"
+          },
+          {
+            "text": "Le café était mauvais",
+            "sentiment": "negative",
+            "category": "restauration"
+          },
+          {
+            "text": "Les salles étaient confortables",
+            "sentiment": "positive",
+            "category": "locaux"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 2,
+      "http_status": 200,
+      "latency_ms": 2045.4447470256127,
+      "raw_body": "{\"id\":\"chatcmpl-9156b4c5d78e89a1\",\"object\":\"chat.completion\",\"created\":1772470293,\"model\":\"Qwen/Qwen2.5-7B-Instruct-AWQ\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"items\\\": [\\n    {\\n      \\\"text\\\": \\\"Pas assez chauffé\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"logistique\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Le café était mauvais\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"restauration\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Les salles étaient confortables\\\",\\n      \\\"sentiment\\\": \\\"positive\\\",\\n      \\\"category\\\": \\\"locaux\\\"\\n    }\\n  ]\\n}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":141,\"total_tokens\":246,\"completion_tokens\":105,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\n  \"items\": [\n    {\n      \"text\": \"Pas assez chauffé\",\n      \"sentiment\": \"negative\",\n      \"category\": \"logistique\"\n    },\n    {\n      \"text\": \"Le café était mauvais\",\n      \"sentiment\": \"negative\",\n      \"category\": \"restauration\"\n    },\n    {\n      \"text\": \"Les salles étaient confortables\",\n      \"sentiment\": \"positive\",\n      \"category\": \"locaux\"\n    }\n  ]\n}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "items": [
+          {
+            "text": "Pas assez chauffé",
+            "sentiment": "negative",
+            "category": "logistique"
+          },
+          {
+            "text": "Le café était mauvais",
+            "sentiment": "negative",
+            "category": "restauration"
+          },
+          {
+            "text": "Les salles étaient confortables",
+            "sentiment": "positive",
+            "category": "locaux"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 3,
+      "http_status": 200,
+      "latency_ms": 2046.8464290024713,
+      "raw_body": "{\"id\":\"chatcmpl-a4ceea209fd41f42\",\"object\":\"chat.completion\",\"created\":1772470295,\"model\":\"Qwen/Qwen2.5-7B-Instruct-AWQ\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"items\\\": [\\n    {\\n      \\\"text\\\": \\\"Pas assez chauffé\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"logistique\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Le café était mauvais\\\",\\n      \\\"sentiment\\\": \\\"negative\\\",\\n      \\\"category\\\": \\\"restauration\\\"\\n    },\\n    {\\n      \\\"text\\\": \\\"Les salles étaient confortables\\\",\\n      \\\"sentiment\\\": \\\"positive\\\",\\n      \\\"category\\\": \\\"locaux\\\"\\n    }\\n  ]\\n}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":141,\"total_tokens\":246,\"completion_tokens\":105,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\n  \"items\": [\n    {\n      \"text\": \"Pas assez chauffé\",\n      \"sentiment\": \"negative\",\n      \"category\": \"logistique\"\n    },\n    {\n      \"text\": \"Le café était mauvais\",\n      \"sentiment\": \"negative\",\n      \"category\": \"restauration\"\n    },\n    {\n      \"text\": \"Les salles étaient confortables\",\n      \"sentiment\": \"positive\",\n      \"category\": \"locaux\"\n    }\n  ]\n}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "items": [
+          {
+            "text": "Pas assez chauffé",
+            "sentiment": "negative",
+            "category": "logistique"
+          },
+          {
+            "text": "Le café était mauvais",
+            "sentiment": "negative",
+            "category": "restauration"
+          },
+          {
+            "text": "Les salles étaient confortables",
+            "sentiment": "positive",
+            "category": "locaux"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    }
+  ]
+}

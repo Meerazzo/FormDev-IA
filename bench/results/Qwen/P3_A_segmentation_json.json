@@ -1,0 +1,106 @@
+{
+  "test": {
+    "id": "P3_A_segmentation_json",
+    "project": "P3_SURVEYS",
+    "expects": {
+      "type": "json",
+      "schema_hint": "object.points[].text"
+    },
+    "max_tokens": 220,
+    "prompt": "Segmente la réponse utilisateur en points élémentaires.\nRends uniquement du JSON valide, sans texte autour.\nFormat attendu:\n{\"points\":[{\"text\":\"...\"}]}\n\nRéponse utilisateur:\n\"Pas assez chauffé, le café était mauvais, mais les salles étaient confortables.\""
+  },
+  "summary": {
+    "id": "P3_A_segmentation_json",
+    "project": "P3_SURVEYS",
+    "repeat": 3,
+    "latency_ms": {
+      "mean": 1712.3608200151164,
+      "p95": 1715.5461654125247,
+      "min": 1710.1247740210965,
+      "max": 1716.0629960126244
+    },
+    "http_ok_rate": 1.0,
+    "json_ok_rate": 1.0,
+    "must_contain_ok_rate": null
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "latency_ms": 1716.0629960126244,
+      "raw_body": "{\"id\":\"chatcmpl-b1c28ce9de41daed\",\"object\":\"chat.completion\",\"created\":1772461509,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"points\\\":[{\\\"text\\\":\\\"Pas assez chauffé\\\"},{\\\"text\\\":\\\"Le café était mauvais\\\"},{\\\"text\\\":\\\"Les salles étaient confortables\\\"}]}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":89,\"total_tokens\":118,\"completion_tokens\":29,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\"points\":[{\"text\":\"Pas assez chauffé\"},{\"text\":\"Le café était mauvais\"},{\"text\":\"Les salles étaient confortables\"}]}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "points": [
+          {
+            "text": "Pas assez chauffé"
+          },
+          {
+            "text": "Le café était mauvais"
+          },
+          {
+            "text": "Les salles étaient confortables"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 2,
+      "http_status": 200,
+      "latency_ms": 1710.894690011628,
+      "raw_body": "{\"id\":\"chatcmpl-ac1a820113615818\",\"object\":\"chat.completion\",\"created\":1772461510,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"points\\\":[{\\\"text\\\":\\\"Pas assez chauffé\\\"},{\\\"text\\\":\\\"le café était mauvais\\\"},{\\\"text\\\":\\\"les salles étaient confortables\\\"}]}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":89,\"total_tokens\":118,\"completion_tokens\":29,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\"points\":[{\"text\":\"Pas assez chauffé\"},{\"text\":\"le café était mauvais\"},{\"text\":\"les salles étaient confortables\"}]}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "points": [
+          {
+            "text": "Pas assez chauffé"
+          },
+          {
+            "text": "le café était mauvais"
+          },
+          {
+            "text": "les salles étaient confortables"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    },
+    {
+      "attempt": 3,
+      "http_status": 200,
+      "latency_ms": 1710.1247740210965,
+      "raw_body": "{\"id\":\"chatcmpl-8be3b54c1823c5c1\",\"object\":\"chat.completion\",\"created\":1772461512,\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"points\\\":[{\\\"text\\\":\\\"Pas assez chauffé\\\"},{\\\"text\\\":\\\"le café était mauvais\\\"},{\\\"text\\\":\\\"les salles étaient confortables\\\"}]}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"tool_calls\":[],\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null}],\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"prompt_tokens\":89,\"total_tokens\":118,\"completion_tokens\":29,\"prompt_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"kv_transfer_params\":null}",
+      "assistant_text": "{\"points\":[{\"text\":\"Pas assez chauffé\"},{\"text\":\"le café était mauvais\"},{\"text\":\"les salles étaient confortables\"}]}",
+      "json_expected": true,
+      "json_ok": true,
+      "json_parse_mode": "strict",
+      "json_obj": {
+        "points": [
+          {
+            "text": "Pas assez chauffé"
+          },
+          {
+            "text": "le café était mauvais"
+          },
+          {
+            "text": "les salles étaient confortables"
+          }
+        ]
+      },
+      "must_contain": null,
+      "must_contain_ok": null,
+      "parse_error": null
+    }
+  ]
+}

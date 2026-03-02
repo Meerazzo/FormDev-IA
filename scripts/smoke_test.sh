@@ -3,7 +3,7 @@ set -euo pipefail
 
 API_PORT="${API_PORT:-8080}"
 API_KEY="${API_KEY:-FormdevINF26}"
-MODEL_ID="${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct-AWQ}"
 
 echo "[1/3] Health..."
 curl -s "http://localhost:${API_PORT}/health"
