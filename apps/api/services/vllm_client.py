@@ -1,3 +1,15 @@
+"""
+Client HTTP vers le serveur d'inférence vLLM.
+
+Ce module encapsule les appels réseau vers le serveur vLLM afin de :
+
+- isoler la logique d'inférence du reste de l'application
+- centraliser la gestion des erreurs réseau
+- simplifier l'utilisation côté services métier
+
+Le serveur vLLM expose une API compatible OpenAI.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,6 +20,13 @@ from core.config import settings
 
 
 class VLLMConnectionError(RuntimeError):
+    """
+    Erreur levée lorsque le serveur vLLM est inaccessible.
+    Typiquement causé par :
+    - serveur arrêté
+    - problème réseau
+    - container inference non démarré
+    """
     pass
 
 
@@ -20,6 +39,13 @@ class VLLMUpstreamError(RuntimeError):
 
 @dataclass
 class VLLMChatResult:
+    """
+    Résultat normalisé d'une génération de texte.
+
+    text : texte généré par le modèle
+    model : modèle utilisé pour la génération
+    raw : réponse brute renvoyée par vLLM (utile pour debug)
+    """
     text: str
     model: Optional[str] = None
     raw: Optional[Dict[str, Any]] = None
@@ -30,10 +56,17 @@ class VLLMClient:
     base_url: str = settings.VLLM_BASE_URL
 
     def __post_init__(self) -> None:
+        # Normalise l'URL du serveur vLLM et configure les timeouts HTTP
         self.base_url = self.base_url.rstrip("/")
         self._timeout = httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=10.0)
 
     async def chat_completions(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Proxy direct vers l'endpoint OpenAI-compatible de vLLM.
+
+        Cette méthode est utilisée par l'endpoint /v1/chat afin de
+        transmettre directement les requêtes des clients vers le modèle.
+        """
         url = f"{self.base_url}/v1/chat/completions"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -57,6 +90,12 @@ class VLLMClient:
         timeout_s: int = 120,
         model: Optional[str] = None,
     ) -> VLLMChatResult:
+        """
+        Interface simplifiée pour les services internes.
+
+        Cette méthode construit la requête attendue par vLLM et extrait
+        le texte généré afin de fournir un résultat plus simple à exploiter.
+        """
         # timeout par requête (sans modifier self._timeout global)
         timeout = httpx.Timeout(connect=10.0, read=float(timeout_s), write=float(timeout_s), pool=10.0)
 

@@ -1,3 +1,15 @@
+"""
+Construction des prompts utilisés pour l'enrichissement pédagogique.
+
+Le prompt système impose :
+- un ton pédagogique
+- une structure claire
+- des contraintes de longueur et de style
+
+L'objectif est de produire un texte directement exploitable
+dans un logiciel de gestion de formation.
+"""
+
 from __future__ import annotations
 from typing import Optional
 
@@ -7,16 +19,24 @@ LENGTH_GUIDE = {
     "short": "5 à 7 lignes maximum.",
     "medium": "8 à 12 lignes environ.",
     "long": "12 à 18 lignes environ.",
-}
+} # Guide de longueur utilisé pour adapter la génération du modèle
 
 STYLE_GUIDE = {
     "pedagogic": "Ton pédagogique, clair, orienté objectifs.",
     "descriptive": "Ton descriptif, factuel, orienté contenu.",
     "neutral": "Ton neutre, concis, sans marketing.",
-}
+} # Guide de style rédactionnel
 
 
 def build_system_prompt(context: Optional[ContentContext], options: Optional[ContentOptions]) -> str:
+    """
+    Construit le prompt système envoyé au modèle.
+
+    Le prompt inclut :
+    - les contraintes rédactionnelles
+    - le contexte pédagogique
+    - les règles de structure attendue
+    """
     lang = (options.language if options else "fr") or "fr"
     length = (options.length if options else "medium") or "medium"
     style = (options.style if options else "pedagogic") or "pedagogic"
@@ -38,23 +58,23 @@ def build_system_prompt(context: Optional[ContentContext], options: Optional[Con
 
     # Prompt volontairement strict : structure + pas de balises + pas de listes à rallonge
     return f"""
-Tu es un assistant spécialisé en ingénierie pédagogique. Ta mission: transformer un intitulé de programme en un paragraphe clair, directement réutilisable dans un logiciel de formation.
+    Tu es un assistant spécialisé en ingénierie pédagogique. Ta mission: transformer un intitulé de programme en un paragraphe clair, directement réutilisable dans un logiciel de formation.
 
-Contraintes:
-- Langue: {lang}
-- {STYLE_GUIDE.get(style, STYLE_GUIDE["pedagogic"])}
-- Longueur: {LENGTH_GUIDE.get(length, LENGTH_GUIDE["medium"])}
-- Réponds en TEXTE PLAIN (pas de markdown, pas de titres en majuscules, pas de puces longues).
-- Structure attendue dans un seul paragraphe fluide:
-  1) Objectif pédagogique (ce que l'apprenant saura faire)
-  2) Notions/compétences travaillées
-  3) Bénéfices concrets / mise en pratique
+    Contraintes:
+    - Langue: {lang}
+    - {STYLE_GUIDE.get(style, STYLE_GUIDE["pedagogic"])}
+    - Longueur: {LENGTH_GUIDE.get(length, LENGTH_GUIDE["medium"])}
+    - Réponds en TEXTE PLAIN (pas de markdown, pas de titres en majuscules, pas de puces longues).
+    - Structure attendue dans un seul paragraphe fluide:
+    1) Objectif pédagogique (ce que l'apprenant saura faire)
+    2) Notions/compétences travaillées
+    3) Bénéfices concrets / mise en pratique
 
-Contexte à respecter:
-{ctx_block}
+    Contexte à respecter:
+    {ctx_block}
 
-Interdictions:
-- Ne fais pas de promesses exagérées.
-- N'invente pas des prérequis ou outils non mentionnés par le contexte.
-- Ne parle pas de "prompt", "modèle", "IA", "LLM".
-""".strip()
+    Interdictions:
+    - Ne fais pas de promesses exagérées.
+    - N'invente pas des prérequis ou outils non mentionnés par le contexte.
+    - Ne parle pas de "prompt", "modèle", "IA", "LLM".
+    """.strip()

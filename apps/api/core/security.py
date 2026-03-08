@@ -1,11 +1,25 @@
+"""
+Gestion de l'authentification par clé API.
+
+Les clés sont définies dans la variable d'environnement API_KEYS.
+
+Format attendu :
+
+clientA:keyA,clientB:keyB
+
+Ce module construit deux structures :
+- VALID_KEYS : ensemble des clés autorisées
+- KEY_TO_CLIENT : mapping clé -> identifiant client
+"""
+
 from __future__ import annotations
 from fastapi import HTTPException
 from core.config import settings
 
 API_KEYS_RAW = settings.API_KEYS
 
-VALID_KEYS: set[str] = set()
-KEY_TO_CLIENT: dict[str, str] = {}
+VALID_KEYS: set[str] = set() # Ensemble des clés API valides
+KEY_TO_CLIENT: dict[str, str] = {} # Mapping permettant d'associer une clé API à un client
 
 for chunk in [c.strip() for c in API_KEYS_RAW.split(",") if c.strip()]:
     if ":" in chunk:
@@ -22,6 +36,13 @@ for chunk in [c.strip() for c in API_KEYS_RAW.split(",") if c.strip()]:
 
 
 def authenticate(x_api_key: str | None) -> tuple[str, str | None]:
+    """
+    Vérifie la validité d'une clé API.
+
+    Retourne :
+    - la clé utilisée
+    - l'identifiant client associé (si configuré)
+    """
     if not VALID_KEYS:
         raise HTTPException(status_code=500, detail="API_KEYS not configured")
 
