@@ -1,6 +1,8 @@
 from __future__ import annotations
 from fastapi import HTTPException
-from config import API_KEYS_RAW
+from core.config import settings
+
+API_KEYS_RAW = settings.API_KEYS
 
 VALID_KEYS: set[str] = set()
 KEY_TO_CLIENT: dict[str, str] = {}

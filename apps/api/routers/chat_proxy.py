@@ -3,10 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from core.config import RATE_LIMIT_RPM
+from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
 from services.vllm_client import VLLMClient
+
+RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
 
 router = APIRouter(tags=["gateway"])
 vllm = VLLMClient()
