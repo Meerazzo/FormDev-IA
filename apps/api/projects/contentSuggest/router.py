@@ -25,7 +25,6 @@ from projects.contentSuggest.service import enrich_content
 
 router = APIRouter(prefix="/v1/content", tags=["content"]) # Route principale du service d'enrichissement
 
-
 @router.post(
     "/enrich",
     response_model=ContentEnrichResponse,
