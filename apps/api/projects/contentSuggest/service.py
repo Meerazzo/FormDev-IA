@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import re
 import time
+import logging
 from typing import Tuple, Optional
 
 from schemas.content import ContentEnrichRequest
 from services.vllm_client import VLLMClient
 from projects.contentSuggest.prompts import build_system_prompt
 
+logger = logging.getLogger("formdev_ia_api")
 
 def _sanitize_output(text: str) -> str:
     """
@@ -56,6 +58,7 @@ async def enrich_content(req: ContentEnrichRequest, client: VLLMClient) -> Tuple
     4. Nettoyage de la sortie
     5. Retour du texte généré et du temps de réponse
     """
+    
     options = req.options
     length = (options.length if options else "medium") or "medium"
     max_tokens = _max_tokens_for_options(length)
@@ -79,5 +82,10 @@ async def enrich_content(req: ContentEnrichRequest, client: VLLMClient) -> Tuple
     enriched = _sanitize_output(resp.text or "") # Sécurité : on refuse une réponse vide du modèle
     if not enriched:
         raise RuntimeError("Empty model output") 
-
+    logger.info(
+        "content_enrich success model=%s latency_ms=%.1f text_len=%d",
+        resp.model or "-",
+        dt_ms,
+        len(enriched),
+    )
     return enriched, resp.model, dt_ms

@@ -38,7 +38,18 @@ def create_app() -> FastAPI:
     - d'éviter les effets de bord à l'import
     """
     setup_logging()
-    app = FastAPI(title="FormDev IA - Gateway")
+    app = FastAPI(
+        title="FormDev IA - Gateway",
+        description="""
+        API gateway pour les services IA de FormDev.
+
+        Fonctionnalités principales :
+        - Chatbot RAG multi-clients
+        - enrichissement de contenus pédagogiques
+        - Analyse de satisfaction
+        """,
+        version="1.0",
+    )
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_handler) # Activation du rate limiter global (SlowAPI)

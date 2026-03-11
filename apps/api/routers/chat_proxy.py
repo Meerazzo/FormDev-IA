@@ -26,7 +26,11 @@ RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM # Limite de requêtes par minute appliq
 router = APIRouter(tags=["gateway"])
 vllm = VLLMClient() # Instance du client vLLM utilisée pour appeler le serveur d'inférence
 
-@router.post("/v1/chat")
+@router.post(
+    "/v1/chat",
+    summary="Proxy vers le modèle de chat",
+    description="Transmet une requête de type OpenAI Chat Completions au serveur vLLM local.",
+)
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute") 
 async def chat(payload: Dict[str, Any], request: Request, x_api_key: str | None = Header(default=None)):
     _, client_id = authenticate(x_api_key) # Authentification via API key et récupération de l'identifiant client

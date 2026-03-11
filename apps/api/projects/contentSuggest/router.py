@@ -26,11 +26,36 @@ from projects.contentSuggest.service import enrich_content
 router = APIRouter(prefix="/v1/content", tags=["content"]) # Route principale du service d'enrichissement
 
 
-@router.post("/enrich", response_model=ContentEnrichResponse)
+@router.post(
+    "/enrich",
+    response_model=ContentEnrichResponse,
+    summary="Enrichir un intitulé de formation",
+    description="""
+        Génère un paragraphe pédagogique complet à partir d’un intitulé court.
+
+        Le texte généré décrit :
+        - l’objectif pédagogique
+        - les notions travaillées
+        - les bénéfices pour l’apprenant
+    """,
+)
 @limiter.limit(f"{settings.RATE_LIMIT_RPM}/minute")
 async def enrich(
     request: Request,
-    req: ContentEnrichRequest = Body(...),
+    req: ContentEnrichRequest = Body(
+        ...,
+            example={
+            "text": "Travailler les titres dans Word",
+            "context": {
+                "training_name": "Word - Initiation",
+                "level": "débutant"
+            },
+            "options": {
+                "length": "medium",
+                "style": "pedagogic",
+                "language": "fr"
+            }
+        }),
     client: VLLMClient = Depends(get_vllm_client),
     x_api_key: str | None = Header(default=None),
 ):

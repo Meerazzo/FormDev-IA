@@ -25,7 +25,7 @@ class ContentContext(BaseModel):
     - la durée
     - le public cible
     """
-    training_name: Optional[str] = Field(default=None, description="Nom de la formation")
+    training_name: Optional[str] = Field(default=None, description="Nom de la formation", examples=["Word - Initiation"])
     level: Optional[str] = Field(default=None, description="Niveau (initiation, avancé...)")
     duration: Optional[str] = Field(default=None, description="Durée (ex: 2h, 1 jour)")
     audience: Optional[str] = Field(default=None, description="Public cible")
@@ -53,7 +53,7 @@ class ContentEnrichRequest(BaseModel):
     context : informations pédagogiques complémentaires
     options : paramètres de génération
     """
-    text: str = Field(..., min_length=2, max_length=500, description="Intitulé/phrase à enrichir")
+    text: str = Field(..., min_length=2, max_length=500, description="Intitulé/phrase à enrichir", examples=["Travailler les titres dans Word"])
     context: Optional[ContentContext] = None
     options: Optional[ContentOptions] = None
 
