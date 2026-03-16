@@ -29,6 +29,29 @@ RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM  # Limite de requêtes par minute appli
 router = APIRouter(tags=["gateway"])
 vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur d'inférence
 
+# Petit budget de continuation quand la première réponse a été coupée
+CONTINUATION_MAX_TOKENS = 80
+
+def _extract_main_fields(raw_response: dict) -> tuple[str, str | None, dict]:
+    """Extrait le contenu, la raison d'arrêt et l'usage depuis la réponse brute vLLM."""
+    choice = (raw_response.get("choices") or [{}])[0] or {}
+    message = choice.get("message") or {}
+    content = message.get("content", "") or ""
+    finish_reason = choice.get("finish_reason")
+    usage = raw_response.get("usage") or {}
+    return content, finish_reason, usage
+
+
+def _join_contents(first: str, continuation: str) -> str:
+    """
+    Concatène proprement la réponse initiale et la continuation.
+    On évite juste les doubles espaces les plus évidents.
+    """
+    if not first:
+        return continuation.strip()
+    if not continuation:
+        return first.strip()
+    return f"{first.rstrip()} {continuation.lstrip()}".strip()
 
 @router.post(
     "/v1/chat",
@@ -37,22 +60,19 @@ vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur
     description="""
 Interroge le modèle de langage via la gateway FormDev.
 
-La requête doit contenir une liste de messages structurés.
+La requête contient une liste de **messages structurés** représentant une conversation.
 
-Chaque message possède un **role** et un **content**.
+Chaque message possède :
+- **role** : type de message
+- **content** : texte du message
 
-### Rôles possibles
+### Rôles disponibles
 
-- **system** : définit le comportement ou les instructions générales du modèle
-- **user** : message envoyé par l'utilisateur ou l'application
-- **assistant** : réponse précédente du modèle (optionnel)
+- **system** : instructions générales pour cadrer le comportement du modèle  
+- **user** : demande ou question envoyée par l'application  
+- **assistant** : réponse précédente du modèle (optionnel, pour maintenir un contexte)
 
-### Exemple simple
-
-system → définit le rôle de l'IA  
-user → question ou demande  
-
-### Exemple
+Exemple minimal :
 
 ```json
 {
@@ -67,13 +87,36 @@ user → question ou demande
     }
   ]
 }
-Paramètres principaux
+```
+### Paramètres de génération
 
-- max_tokens : longueur maximale de la réponse
+- **temperature**  
+  Contrôle la créativité de la réponse.  
+  - `0.2` → réponses très stables  
+  - `0.4` à `0.7` → bon compromis pour un usage métier  
+  - `> 0.8` → réponses plus variées mais moins prévisibles
 
-- temperature : créativité de la réponse
+- **top_p**  
+  Contrôle la diversité du texte généré.  
+  Valeur recommandée : **0.8 à 0.95**.
 
-- top_p : diversité du texte généré
+- **max_tokens**  
+  Limite technique sur la taille maximale de la réponse.  
+  Si la valeur est trop basse, la réponse peut être coupée.
+
+### Bonne pratique
+
+Pour contrôler la longueur de la réponse, il est préférable de le préciser directement dans le prompt, par exemple :
+
+- `"Réponds en une phrase"`
+- `"Fais une réponse courte de 3 à 4 phrases"`
+- `"Rédige un paragraphe détaillé"`
+
+### Contexte du modèle
+
+Le modèle **Qwen 7B Instruct** est servi avec une fenêtre de contexte configurée à **4096 tokens** côté serveur.  
+Cette limite correspond à la taille totale de la requête (**messages + génération**).
+une limite de 1024 tokens a ete definis cote serveur pour le prompt.
 """,
     responses={
         200: {"description": "Réponse générée par le modèle"},
@@ -165,21 +208,77 @@ async def chat(
 
     try:
         t0 = time.perf_counter()
-        raw_response = await vllm.chat_completions(payload.model_dump(exclude_none=True))
+
+        base_payload = payload.model_dump(exclude_none=True)
+        raw_response = await vllm.chat_completions(base_payload)
+
+        content, finish_reason, usage = _extract_main_fields(raw_response)
+        final_content = content
+        final_finish_reason = finish_reason
+        final_usage = usage
+        final_model = raw_response.get("model")
+
+        # Si la réponse a été coupée par la limite de longueur,
+        # on fait une seule relance pour terminer proprement.
+        if finish_reason == "length" and content.strip():
+            continuation_payload = payload.model_dump(exclude_none=True)
+
+            continuation_payload["messages"] = continuation_payload["messages"] + [
+                {
+                    "role": "assistant",
+                    "content": content
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Continue uniquement la fin de la réponse sans répéter le début. "
+                        "Termine proprement la phrase ou le paragraphe en cours."
+                    )
+                }
+            ]
+
+            # On garde temperature/top_p éventuels,
+            # mais on utilise un petit budget juste pour finir.
+            continuation_payload["max_tokens"] = CONTINUATION_MAX_TOKENS
+
+            continuation_raw_response = await vllm.chat_completions(continuation_payload)
+            continuation_content, continuation_finish_reason, continuation_usage = _extract_main_fields(
+                continuation_raw_response
+            )
+
+            final_content = _join_contents(content, continuation_content)
+            final_finish_reason = continuation_finish_reason or finish_reason
+
+            # Reporting simple :
+            # - on garde les prompt_tokens du premier appel
+            # - on additionne les completion_tokens
+            # - total_tokens recalculé
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = (usage.get("completion_tokens") or 0) + (
+                continuation_usage.get("completion_tokens") or 0
+            )
+
+            if prompt_tokens is not None:
+                total_tokens = prompt_tokens + completion_tokens
+            else:
+                total_tokens = None
+
+            final_usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
-        choice = raw_response.get("choices", [{}])[0]
-        message = choice.get("message", {}) or {}
-        usage = raw_response.get("usage", {}) or {}
-
         return ChatResponse(
-            model=raw_response.get("model"),
-            content=message.get("content", ""),
-            finish_reason=choice.get("finish_reason"),
+            model=final_model,
+            content=final_content,
+            finish_reason=final_finish_reason,
             usage=ChatUsage(
-                prompt_tokens=usage.get("prompt_tokens"),
-                completion_tokens=usage.get("completion_tokens"),
-                total_tokens=usage.get("total_tokens"),
+                prompt_tokens=final_usage.get("prompt_tokens"),
+                completion_tokens=final_usage.get("completion_tokens"),
+                total_tokens=final_usage.get("total_tokens"),
             ),
             latency_ms=round(latency_ms, 1),
         )
