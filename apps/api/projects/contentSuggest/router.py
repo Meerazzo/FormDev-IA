@@ -9,7 +9,8 @@ Cet endpoint transforme un intitulé de formation
 en description pédagogique complète.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Body, Security
+from fastapi.security import APIKeyHeader
 
 from core.config import settings
 from core.rate_limit import limiter
@@ -23,45 +24,92 @@ from services.vllm_client import (
 )
 from projects.contentSuggest.service import enrich_content
 
-router = APIRouter(prefix="/v1/content", tags=["content"]) # Route principale du service d'enrichissement
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+router = APIRouter(prefix="/v1/content", tags=["content"])  # Route principale du service d'enrichissement
+
 
 @router.post(
     "/enrich",
     response_model=ContentEnrichResponse,
     summary="Enrichir un intitulé de formation",
     description="""
-        Génère un paragraphe pédagogique complet à partir d’un intitulé court.
+Génère un paragraphe pédagogique complet à partir d’un intitulé de formation.
 
-        Le texte généré décrit :
-        - l’objectif pédagogique
-        - les notions travaillées
-        - les bénéfices pour l’apprenant
-    """,
+Le texte retourné est destiné à être réutilisé directement dans FormDev.
+Selon les paramètres fournis, la génération peut prendre en compte :
+- le contexte de la formation
+- le niveau visé
+- la durée
+- le public cible
+- la longueur souhaitée
+- le style rédactionnel
+- la langue de sortie
+""",
+    response_description="Texte enrichi généré par le modèle",
+    responses={
+        401: {"description": "Clé API absente ou invalide"},
+        429: {"description": "Limite de requêtes atteinte"},
+        502: {"description": "Erreur du serveur d'inférence ou service indisponible"},
+        504: {"description": "Timeout lors de la génération côté modèle"},
+    },
 )
 @limiter.limit(f"{settings.RATE_LIMIT_RPM}/minute")
 async def enrich(
     request: Request,
     req: ContentEnrichRequest = Body(
         ...,
-            example={
-            "text": "Travailler les titres dans Word",
-            "context": {
-                "training_name": "Word - Initiation",
-                "level": "débutant"
+        openapi_examples={
+            "minimal": {
+                "summary": "Exemple minimal",
+                "description": "Cas le plus simple, avec seulement l’intitulé à enrichir.",
+                "value": {
+                    "text": "Travailler les titres dans Word"
+                },
             },
-            "options": {
-                "length": "medium",
-                "style": "pedagogic",
-                "language": "fr"
-            }
-        }),
+            "standard": {
+                "summary": "Exemple standard",
+                "description": "Cas typique avec contexte pédagogique et options de génération.",
+                "value": {
+                    "text": "Travailler les titres dans Word",
+                    "context": {
+                        "training_name": "Word - Initiation",
+                        "level": "débutant"
+                    },
+                    "options": {
+                        "length": "medium",
+                        "style": "pedagogic",
+                        "language": "fr"
+                    }
+                },
+            },
+            "advanced": {
+                "summary": "Exemple avancé",
+                "description": "Cas plus complet avec contexte métier plus détaillé.",
+                "value": {
+                    "text": "Automatiser des tâches avec les macros",
+                    "context": {
+                        "training_name": "Excel - Perfectionnement",
+                        "level": "avancé",
+                        "duration": "1 jour",
+                        "audience": "utilisateurs expérimentés"
+                    },
+                    "options": {
+                        "length": "long",
+                        "style": "descriptive",
+                        "language": "fr"
+                    }
+                },
+            },
+        },
+    ),
     client: VLLMClient = Depends(get_vllm_client),
-    x_api_key: str | None = Header(default=None),
+    x_api_key: str | None = Security(api_key_header),
 ):
-    authenticate(x_api_key) # Vérification de la clé API avant traitement
+    authenticate(x_api_key)  # Vérification de la clé API avant traitement
 
     try:
-        enriched, model, latency_ms = await enrich_content(req, client) # Appel du service métier responsable de la génération
+        enriched, model, latency_ms = await enrich_content(req, client)  # Appel du service métier responsable de la génération
         return ContentEnrichResponse(
             enriched_text=enriched,
             model=model,

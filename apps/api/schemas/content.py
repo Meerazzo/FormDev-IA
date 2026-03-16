@@ -7,12 +7,21 @@ Ces modèles définissent :
 - le format des réponses retournées par l'API
 """
 
+from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, Dict, Any
+from typing import Optional, Dict, Any
 
 
-LengthOption = Literal["short", "medium", "long"]
-StyleOption = Literal["pedagogic", "descriptive", "neutral"]
+class LengthOption(str, Enum):
+    short = "short"
+    medium = "medium"
+    long = "long"
+
+
+class StyleOption(str, Enum):
+    pedagogic = "pedagogic"
+    descriptive = "descriptive"
+    neutral = "neutral"
 
 
 class ContentContext(BaseModel):
@@ -25,12 +34,30 @@ class ContentContext(BaseModel):
     - la durée
     - le public cible
     """
-    training_name: Optional[str] = Field(default=None, description="Nom de la formation", examples=["Word - Initiation"])
-    level: Optional[str] = Field(default=None, description="Niveau (initiation, avancé...)")
-    duration: Optional[str] = Field(default=None, description="Durée (ex: 2h, 1 jour)")
-    audience: Optional[str] = Field(default=None, description="Public cible")
-    extra: Optional[Dict[str, Any]] = Field(default=None, description="Contexte libre additionnel")
-
+    training_name: Optional[str] = Field(
+        default=None,
+        description="Nom de la formation dans FormDev",
+        examples=["Word - Initiation"],
+    )
+    level: Optional[str] = Field(
+        default=None,
+        description="Niveau visé par la formation",
+        examples=["débutant", "intermédiaire", "avancé"],
+    )
+    duration: Optional[str] = Field(
+        default=None,
+        description="Durée prévue de la formation",
+        examples=["2 heures", "1 jour"],
+    )
+    audience: Optional[str] = Field(
+        default=None,
+        description="Public cible de la formation",
+        examples=["assistants administratifs", "utilisateurs bureautiques"],
+    )
+    extra: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Contexte complémentaire libre à transmettre au modèle",
+    )
 
 class ContentOptions(BaseModel):
     """
@@ -40,10 +67,21 @@ class ContentOptions(BaseModel):
     style : ton rédactionnel
     language : langue de sortie
     """
-    length: Optional[LengthOption] = Field(default="medium")
-    style: Optional[StyleOption] = Field(default="pedagogic")
-    language: Optional[str] = Field(default="fr", description="Langue de sortie, ex: fr/en")
-
+    length: LengthOption = Field(
+        default=LengthOption.medium,
+        description="Longueur souhaitée du texte généré",
+        examples=["medium"],
+    )
+    style: StyleOption = Field(
+        default=StyleOption.pedagogic,
+        description="Style rédactionnel attendu",
+        examples=["pedagogic"],
+    )
+    language: str = Field(
+        default="fr",
+        description="Langue de sortie, par exemple fr ou en",
+        examples=["fr"],
+    )
 
 class ContentEnrichRequest(BaseModel):
     """
@@ -59,6 +97,15 @@ class ContentEnrichRequest(BaseModel):
 
 
 class ContentEnrichResponse(BaseModel):
-    enriched_text: str
-    model: Optional[str] = None
-    latency_ms: Optional[float] = None
+    enriched_text: str = Field(
+        ...,
+        description="Paragraphe pédagogique généré à partir de l’intitulé fourni",
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="Nom du modèle utilisé pour la génération",
+    )
+    latency_ms: Optional[float] = Field(
+        default=None,
+        description="Temps de génération mesuré côté API, en millisecondes",
+    )

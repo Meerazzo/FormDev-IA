@@ -26,7 +26,7 @@ from core.logging import (
 from core.rate_limit import limiter
 from routers.health import router as health_router
 from routers.chat_proxy import router as chat_router
-from projects.contentSuggest.router import router as content_router  # projet 2
+#from projects.contentSuggest.router import router as content_router  # projet 2
 
 def create_app() -> FastAPI:
     """
@@ -39,15 +39,30 @@ def create_app() -> FastAPI:
     """
     setup_logging()
     app = FastAPI(
-        title="FormDev IA - Gateway",
-        description="""
-        API gateway pour les services IA de FormDev.
+    title="FormDev IA - Gateway",
+    description="""
+    API gateway pour les services d'intelligence artificielle de FormDev.
 
-        Fonctionnalités principales :
-        - Chatbot RAG multi-clients
-        - enrichissement de contenus pédagogiques
-        - Analyse de satisfaction
-        """,
+    Cette API permet d'interroger un modèle de langage local via une interface
+    compatible avec les formats de conversation modernes.
+
+    Principe d'utilisation :
+
+    - envoyer une liste de messages structurés (system / user / assistant)
+    - le modèle génère une réponse en fonction de ces messages
+
+    Structure des rôles :
+
+    • **system** : instructions générales données au modèle  
+    • **user** : question ou demande envoyée par l'utilisateur  
+    • **assistant** : réponse précédente du modèle (optionnel, pour maintenir un contexte)
+
+    Exemple simple :
+
+    system → définit le comportement du modèle  
+    user → pose la question  
+    assistant → réponse générée par l'IA
+    """,
         version="1.0",
     )
 
@@ -59,7 +74,7 @@ def create_app() -> FastAPI:
     # Enregistrement des routes exposées par l'API gateway
     app.include_router(health_router)
     app.include_router(chat_router)
-    app.include_router(content_router)
+    #app.include_router(content_router)
 
     return app
 
