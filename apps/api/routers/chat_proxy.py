@@ -37,7 +37,32 @@ router = APIRouter(tags=["gateway"])
 vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur d'inférence
 
 # Petit budget de continuation quand la première réponse a été coupée
-CONTINUATION_MAX_TOKENS = 80
+CONTINUATION_MAX_TOKENS = 150
+
+DEFAULT_SYSTEM_PROMPT = """
+Tu es un assistant expert en rédaction en français, spécialisé dans les contenus de formation et les documents pédagogiques.
+
+Ta mission est de produire des textes clairs, structurés, naturels et professionnels, adaptés à un contexte de formation.
+
+Règles à respecter impérativement :
+- utiliser un français irréprochable (orthographe, grammaire, syntaxe)
+- produire un texte fluide, naturel et facile à comprendre
+- adopter un ton pédagogique, professionnel et accessible
+- éviter les formulations maladroites, les répétitions et les tournures artificielles
+- respecter strictement la demande de l’utilisateur
+- ne pas inventer d’informations si elles ne sont pas demandées
+- adapter la longueur, le niveau de détail et le style à la consigne
+- produire un texte directement réutilisable, sans commentaire inutile avant ou après
+
+Si un texte est fourni :
+- corriger les éventuelles fautes
+- améliorer la clarté et la qualité du français
+- conserver le sens initial sauf indication contraire
+
+Le texte doit être équivalent à celui qu’un formateur ou concepteur pédagogique francophone produirait.
+
+Réponds uniquement avec le texte final.
+""".strip()
 
 def _extract_input_text(messages: list[dict]) -> str | None:
     user_contents = [
@@ -70,76 +95,101 @@ def _join_contents(first: str, continuation: str) -> str:
         return first.strip()
     return f"{first.rstrip()} {continuation.lstrip()}".strip()
 
+def _build_backend_messages(messages: list[dict]) -> list[dict]:
+    """
+    Construit la conversation envoyée au modèle en imposant
+    le prompt système côté backend.
+
+    Tous les messages 'system' fournis par le client sont ignorés.
+    """
+    non_system_messages = [msg for msg in messages if msg.get("role") != "system"]
+
+    return [
+        {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+        *non_system_messages,
+    ]
+
 @router.post(
     "/v1/chat",
     response_model=ChatResponse,
-    summary="Interroger le modèle de chat",
+    summary="Générer ou transformer un texte en français",
     description="""
 Interroge le modèle de langage via la gateway FormDev.
 
-La requête contient une liste de **messages structurés** représentant une conversation.
+Cette route permet de réaliser différentes tâches de rédaction en français, par exemple :
+- reformuler un texte
+- résumer un contenu
+- enrichir ou développer une idée
+- générer un texte professionnel ou pédagogique
 
-Chaque message possède :
-- **role** : type de message
+La requête repose sur une structure de conversation de type chat.
+
+### Structure des messages
+
+Chaque message contient :
+- **role** : rôle du message dans la conversation
 - **content** : texte du message
 
-### Rôles disponibles
+Rôles possibles :
+- **user** : demande principale envoyée par l'application
+- **assistant** : réponse précédente du modèle, si l'on souhaite conserver un historique conversationnel
+- **system** : message optionnel côté client, mais le cadrage principal du modèle est défini côté serveur pour garantir une qualité homogène des réponses
 
-- **system** : instructions générales pour cadrer le comportement du modèle  
-- **user** : demande ou question envoyée par l'application  
-- **assistant** : réponse précédente du modèle (optionnel, pour maintenir un contexte)
+### Recommandation d'usage
 
-Exemple minimal :
+Pour obtenir les meilleurs résultats, il est recommandé d'exprimer clairement la tâche directement dans le message `user`.
 
-```json
-{
-  "messages": [
-    {
-      "role": "system",
-      "content": "Tu es un assistant pédagogique."
-    },
-    {
-      "role": "user",
-      "content": "Explique ce qu'est un style dans Word."
-    }
-  ]
-}
-```
+Exemples :
+- `Reformule ce texte dans un style professionnel : ...`
+- `Résume ce texte en 3 phrases claires : ...`
+- `Développe cet intitulé sous la forme d'un paragraphe : ...`
+
+### Qualité rédactionnelle
+
+Le comportement général du modèle est encadré côté serveur afin de garantir :
+- un français correct et fluide
+- un ton professionnel
+- une réponse directement exploitable
+- une meilleure cohérence entre les différents usages
+
 ### Paramètres de génération
 
 - **temperature**  
-  Contrôle la créativité de la réponse.  
-  - `0.2` → réponses très stables  
-  - `0.4` à `0.7` → bon compromis pour un usage métier  
-  - `> 0.8` → réponses plus variées mais moins prévisibles
+  Contrôle le niveau de variation dans la réponse.
+  - `0.2` → réponses plus stables, adaptées à la reformulation, au résumé et aux usages métier
+  - `0.3` à `0.5` → réponses un peu plus variées, utiles pour du développement de contenu
+  - `> 0.7` → réponses plus libres, mais moins prévisibles
 
 - **top_p**  
-  Contrôle la diversité du texte généré.  
+  Contrôle la diversité de génération.  
   Valeur recommandée : **0.8 à 0.95**.
 
 - **max_tokens**  
-  Limite technique sur la taille maximale de la réponse.  
-  Si la valeur est trop basse, la réponse peut être coupée.
+  Limite maximale de la réponse générée.  
+  Si cette valeur est trop basse, la sortie peut être coupée.
 
 ### Bonne pratique
 
-Pour contrôler la longueur de la réponse, il est préférable de le préciser directement dans le prompt, par exemple :
+Pour contrôler la forme de la réponse, il est préférable de le préciser directement dans le message utilisateur.
 
-- `"Réponds en une phrase"`
-- `"Fais une réponse courte de 3 à 4 phrases"`
-- `"Rédige un paragraphe détaillé"`
+Exemples :
+- `Réponds en une phrase`
+- `Fais une synthèse en 3 phrases`
+- `Rédige un paragraphe détaillé`
+- `Utilise un style professionnel et fluide`
 
 ### Contexte du modèle
 
-Le modèle **Qwen 7B Instruct** est servi avec une fenêtre de contexte configurée à **4096 tokens** côté serveur.  
-Cette limite correspond à la taille totale de la requête (**messages + génération**).
-une limite de 1024 tokens a ete definis cote serveur pour le prompt.
+Le modèle est servi avec une fenêtre de contexte configurée côté serveur.  
+Cette limite correspond à la taille totale de la requête, c’est-à-dire :
+- les messages envoyés
+- plus la réponse générée
 """,
     responses={
         200: {"description": "Réponse générée par le modèle"},
         401: {"description": "Clé API absente ou invalide"},
         429: {"description": "Limite de requêtes atteinte"},
-        502: {"description": "Serveur d'inférence inaccessible ou erreur amont"},
+        502: {"description": "Erreur du serveur d'inférence ou du proxy IA"},
     },
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
@@ -148,72 +198,92 @@ async def chat(
     payload: ChatRequest = Body(
         ...,
         openapi_examples={
-            "roles_explanation": {
-                "summary": "Comprendre les rôles",
-                "description": "Exemple montrant le rôle system et user.",
-                "value": {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "Tu es un assistant pédagogique spécialisé dans les outils bureautiques."
-                        },
-                        {
-                            "role": "user",
-                            "content": "Explique ce qu'est un style dans Word."
-                        }
-                    ],
-                    "max_tokens": 150
-                }
-            },
-            "simple": {
+            "simple_question": {
                 "summary": "Question simple",
-                "description": "Exemple minimal pour interroger directement le modèle.",
+                "description": "Exemple minimal d'utilisation de la route.",
                 "value": {
                     "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
                     "messages": [
                         {
                             "role": "user",
-                            "content": "Dis bonjour en une phrase."
+                            "content": "Explique ce qu'est un style dans Word en 3 phrases simples."
                         }
                     ],
-                    "max_tokens": 60
-                },
-            },
-            "pedagogical_enrichment": {
-                "summary": "Enrichissement pédagogique",
-                "description": "Exemple d’usage FormDev avec prompt système métier.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "Tu es un assistant spécialisé en ingénierie pédagogique. Rédige un paragraphe clair, fluide et réutilisable dans un logiciel de formation. Le texte doit présenter l’objectif pédagogique, les notions travaillées et les bénéfices pour l’apprenant."
-                        },
-                        {
-                            "role": "user",
-                            "content": "Travailler les titres dans Word"
-                        }
-                    ],
-                    "max_tokens": 220,
-                    "temperature": 0.4,
+                    "max_tokens": 120,
+                    "temperature": 0.2,
                     "top_p": 0.9
                 },
             },
             "reformulation": {
-                "summary": "Reformulation",
-                "description": "Exemple de reformulation d’un texte fourni par l’ERP.",
+                "summary": "Reformulation professionnelle",
+                "description": "Améliorer un texte en corrigeant le français et en le rendant plus fluide.",
                 "value": {
+                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
                     "messages": [
                         {
-                            "role": "system",
-                            "content": "Tu reformules les textes de manière claire, concise et professionnelle."
+                            "role": "user",
+                            "content": "Reformule ce texte dans un style professionnel et fluide, sans changer le sens : Cette formation permet d aborder differents points liés à Word."
+                        }
+                    ],
+                    "max_tokens": 120,
+                    "temperature": 0.2,
+                    "top_p": 0.9
+                },
+            },
+            "summary_text": {
+                "summary": "Résumé",
+                "description": "Synthétiser un contenu en quelques phrases claires.",
+                "value": {
+                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Résume ce texte en 3 phrases claires et professionnelles : Les styles dans Word permettent d appliquer rapidement une mise en forme cohérente à différents éléments d un document. Ils facilitent l organisation, la lisibilité et la structuration des contenus. Leur bonne utilisation permet aussi de gagner du temps lors de la mise en page."
+                        }
+                    ],
+                    "max_tokens": 120,
+                    "temperature": 0.2,
+                    "top_p": 0.9
+                },
+            },
+            "content_enrichment": {
+                "summary": "Enrichissement de contenu",
+                "description": "Développer un intitulé ou une idée sous forme de paragraphe réutilisable.",
+                "value": {
+                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Développe cet intitulé sous la forme d'un paragraphe clair, fluide et professionnel, réutilisable dans un catalogue de formation : Travailler les titres dans Word"
+                        }
+                    ],
+                    "max_tokens": 180,
+                    "temperature": 0.3,
+                    "top_p": 0.9
+                },
+            },
+            "conversation_with_history": {
+                "summary": "Conversation avec historique",
+                "description": "Exemple avec conservation d'un échange précédent.",
+                "value": {
+                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Résume ce texte en 3 phrases : Les styles dans Word permettent d harmoniser la mise en forme d un document."
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "Les styles dans Word permettent d'appliquer une mise en forme cohérente à un document. Ils facilitent l'organisation du contenu et améliorent sa lisibilité. Leur utilisation permet également de gagner du temps dans la mise en page."
                         },
                         {
                             "role": "user",
-                            "content": "Reformule : Cette formation permet d'aborder différents points liés à Word."
+                            "content": "Fais une version encore plus courte."
                         }
                     ],
-                    "max_tokens": 120
+                    "max_tokens": 80,
+                    "temperature": 0.2,
+                    "top_p": 0.9
                 },
             },
         },
@@ -223,7 +293,10 @@ async def chat(
     _, client_id = authenticate(x_api_key)  # Authentification via API key et récupération de l'identifiant client
 
     req_id = getattr(request.state, "request_id", None)
-    messages_json = payload.model_dump(exclude_none=True).get("messages", [])
+
+    client_messages = payload.model_dump(exclude_none=True).get("messages", [])
+    backend_messages = _build_backend_messages(client_messages)
+
     request_params_json = {
         k: v
         for k, v in {
@@ -233,12 +306,15 @@ async def chat(
         }.items()
         if v is not None
     }
-    input_text = _extract_input_text(messages_json)
+
+    input_text = _extract_input_text(client_messages)
 
     try:
         t0 = time.perf_counter()
 
         base_payload = payload.model_dump(exclude_none=True)
+        base_payload["messages"] = backend_messages
+
         raw_response = await vllm.chat_completions(base_payload)
 
         content, finish_reason, usage = _extract_main_fields(raw_response)
@@ -251,8 +327,7 @@ async def chat(
         # on fait une seule relance pour terminer proprement.
         if finish_reason == "length" and content.strip():
             continuation_payload = payload.model_dump(exclude_none=True)
-
-            continuation_payload["messages"] = continuation_payload["messages"] + [
+            continuation_payload["messages"] = backend_messages + [
                 {
                     "role": "assistant",
                     "content": content
@@ -308,7 +383,7 @@ async def chat(
             model_requested=payload.model,
             model_used=final_model,
             input_text=input_text,
-            messages_json=messages_json,
+            messages_json=backend_messages,
             request_params_json=request_params_json,
             output_text=final_content,
             response_json={
@@ -348,7 +423,7 @@ async def chat(
             feature="chat",
             model_requested=payload.model,
             input_text=input_text,
-            messages_json=messages_json,
+            messages_json=backend_messages,
             request_params_json=request_params_json,
             status_code=502,
             error_type="VLLMConnectionError",
