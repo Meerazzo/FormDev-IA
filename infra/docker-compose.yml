@@ -23,6 +23,18 @@ services:
     ipc: host
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   api:
     build:
       context: ..
@@ -31,8 +43,15 @@ services:
       - VLLM_BASE_URL=http://inference:${VLLM_PORT}
       - API_KEYS=${API_KEYS}
       - RATE_LIMIT_RPM=${RATE_LIMIT_RPM}
+      - DATABASE_URL=${DATABASE_URL}
     ports:
       - "${API_PORT}:8080"
     depends_on:
       - inference
+      - postgres
+    volumes:
+      - ../apps/api:/app
     restart: unless-stopped
+
+volumes:
+  postgres_data:

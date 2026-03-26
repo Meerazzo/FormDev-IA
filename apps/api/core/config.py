@@ -23,5 +23,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_RPM: int = 30
     API_KEYS: str = ""
     LOG_LEVEL: str = "INFO"
+    DATABASE_URL: str
 
 settings = Settings()

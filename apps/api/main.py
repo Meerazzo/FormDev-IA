@@ -17,6 +17,7 @@ les services d'inférence IA.
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
+
 from core.logging import (
     setup_logging,
     add_request_id_middleware,
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     """,
         version="1.0",
     )
+
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_handler) # Activation du rate limiter global (SlowAPI)

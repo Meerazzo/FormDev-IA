@@ -13,6 +13,7 @@ Fonctionnalités :
 """
 
 import time
+import logging
 
 from fastapi import APIRouter, HTTPException, Request, Security, Body
 from fastapi.security import APIKeyHeader
@@ -20,8 +21,14 @@ from fastapi.security import APIKeyHeader
 from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
-from schemas.chat import ChatRequest, ChatResponse, ChatResponseMessage, ChatUsage
+from schemas.chat import ChatRequest, ChatResponse, ChatUsage
 from services.vllm_client import VLLMClient, VLLMConnectionError, VLLMUpstreamError
+
+from services.interaction_logger import (
+    log_ai_interaction_success,
+    log_ai_interaction_error,
+)
+
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM  # Limite de requêtes par minute appliquée à cet endpoint
@@ -31,6 +38,16 @@ vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur
 
 # Petit budget de continuation quand la première réponse a été coupée
 CONTINUATION_MAX_TOKENS = 80
+
+def _extract_input_text(messages: list[dict]) -> str | None:
+    user_contents = [
+        (msg.get("content") or "").strip()
+        for msg in messages
+        if msg.get("role") == "user" and (msg.get("content") or "").strip()
+    ]
+    if not user_contents:
+        return None
+    return "\n\n".join(user_contents)
 
 def _extract_main_fields(raw_response: dict) -> tuple[str, str | None, dict]:
     """Extrait le contenu, la raison d'arrêt et l'usage depuis la réponse brute vLLM."""
@@ -204,7 +221,19 @@ async def chat(
     x_api_key: str | None = Security(api_key_header),
 ):
     _, client_id = authenticate(x_api_key)  # Authentification via API key et récupération de l'identifiant client
-    _ = client_id  # future logique multi-tenant / quotas différenciés
+
+    req_id = getattr(request.state, "request_id", None)
+    messages_json = payload.model_dump(exclude_none=True).get("messages", [])
+    request_params_json = {
+        k: v
+        for k, v in {
+            "max_tokens": payload.max_tokens,
+            "temperature": payload.temperature,
+            "top_p": payload.top_p,
+        }.items()
+        if v is not None
+    }
+    input_text = _extract_input_text(messages_json)
 
     try:
         t0 = time.perf_counter()
@@ -270,7 +299,34 @@ async def chat(
             }
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
-
+        log_ai_interaction_success(
+            request_id=req_id,
+            project="project_2",
+            client_id=client_id,
+            endpoint="/v1/chat",
+            feature="chat",
+            model_requested=payload.model,
+            model_used=final_model,
+            input_text=input_text,
+            messages_json=messages_json,
+            request_params_json=request_params_json,
+            output_text=final_content,
+            response_json={
+                "model": final_model,
+                "content": final_content,
+                "finish_reason": final_finish_reason,
+                "usage": final_usage,
+                "latency_ms": round(latency_ms, 1),
+            },
+            finish_reason=final_finish_reason,
+            prompt_tokens=final_usage.get("prompt_tokens"),
+            completion_tokens=final_usage.get("completion_tokens"),
+            total_tokens=final_usage.get("total_tokens"),
+            latency_ms=round(latency_ms, 1),
+            status_code=200,
+            pipeline_name="chat_gateway",
+            pipeline_version="v1",
+        )
         return ChatResponse(
             model=final_model,
             content=final_content,
@@ -284,10 +340,59 @@ async def chat(
         )
 
     except VLLMConnectionError:
+        log_ai_interaction_error(
+            request_id=req_id,
+            project="project_2",
+            client_id=client_id,
+            endpoint="/v1/chat",
+            feature="chat",
+            model_requested=payload.model,
+            input_text=input_text,
+            messages_json=messages_json,
+            request_params_json=request_params_json,
+            status_code=502,
+            error_type="VLLMConnectionError",
+            error_message="Cannot reach inference server (vLLM)",
+            pipeline_name="chat_gateway",
+            pipeline_version="v1",
+        )
         raise HTTPException(status_code=502, detail="Cannot reach inference server (vLLM)")
 
     except VLLMUpstreamError as e:
+        log_ai_interaction_error(
+            request_id=req_id,
+            project="project_2",
+            client_id=client_id,
+            endpoint="/v1/chat",
+            feature="chat",
+            model_requested=payload.model,
+            input_text=input_text,
+            messages_json=messages_json,
+            request_params_json=request_params_json,
+            status_code=502,
+            error_type="VLLMUpstreamError",
+            error_message=f"vLLM upstream error ({e.status_code})",
+            pipeline_name="chat_gateway",
+            pipeline_version="v1",
+            metadata_json={"upstream_status_code": e.status_code},
+        )
         raise HTTPException(status_code=502, detail=f"vLLM upstream error ({e.status_code})")
 
     except Exception as e:
+        log_ai_interaction_error(
+            request_id=req_id,
+            project="project_2",
+            client_id=client_id,
+            endpoint="/v1/chat",
+            feature="chat",
+            model_requested=payload.model,
+            input_text=input_text,
+            messages_json=messages_json,
+            request_params_json=request_params_json,
+            status_code=502,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            pipeline_name="chat_gateway",
+            pipeline_version="v1",
+        )
         raise HTTPException(status_code=502, detail=f"Model error: {type(e).__name__}")
