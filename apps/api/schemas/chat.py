@@ -64,7 +64,14 @@ class ChatRequest(BaseModel):
         description="Paramètre nucleus sampling",
         examples=[0.9],
     )
-
+    post_correction: bool = Field(
+        default=False,
+        description=(
+            "Si activé, l'API effectue une seconde inférence pour corriger les fautes, "
+            "améliorer la fluidité et la tournure des phrases sans changer le sens."
+        ),
+        examples=[False],
+    )
 
 class ChatResponseMessage(BaseModel):
     role: str = Field(

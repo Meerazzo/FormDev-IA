@@ -6,7 +6,7 @@ from alembic import context
 
 from core.config import settings
 from db.base import Base
-from db.models.ai_interaction import AIInteraction
+import db.models
 
 config = context.config
 

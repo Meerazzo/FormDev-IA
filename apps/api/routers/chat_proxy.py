@@ -64,6 +64,24 @@ Le texte doit être équivalent à celui qu’un formateur ou concepteur pédago
 Réponds uniquement avec le texte final.
 """.strip()
 
+POST_CORRECTION_SYSTEM_PROMPT = """
+Tu es un correcteur expert en langue française.
+
+Ta mission est de corriger un texte déjà généré en appliquant le minimum de modifications nécessaires.
+
+Règles impératives :
+- corriger uniquement les fautes d'orthographe, de grammaire, de syntaxe et de ponctuation
+- améliorer légèrement la fluidité seulement si une phrase est maladroite
+- conserver strictement le sens, la structure et le niveau de détail du texte initial
+- ne pas reformuler inutilement
+- ne pas ajouter d'information
+- ne pas développer le texte
+- ne pas transformer le format du texte (pas de liste si le texte est un paragraphe)
+- produire un texte final propre, naturel et directement exploitable
+
+Réponds uniquement avec le texte corrigé.
+""".strip()
+
 def _extract_input_text(messages: list[dict]) -> str | None:
     user_contents = [
         (msg.get("content") or "").strip()
@@ -107,6 +125,23 @@ def _build_backend_messages(messages: list[dict]) -> list[dict]:
     return [
         {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
         *non_system_messages,
+    ]
+
+def _build_post_correction_messages(text: str) -> list[dict]:
+    """
+    Construit la conversation pour la seconde passe de correction linguistique.
+    """
+    return [
+        {"role": "system", "content": POST_CORRECTION_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                "Corrige ce texte avec un minimum de modifications. "
+                "Ne développe pas, ne restructure pas inutilement, "
+                "et conserve le même format :\n\n"
+                f"{text}"
+            ),
+        },
     ]
 
 @router.post(
@@ -168,6 +203,18 @@ Le comportement général du modèle est encadré côté serveur afin de garanti
   Limite maximale de la réponse générée.  
   Si cette valeur est trop basse, la sortie peut être coupée.
 
+### Post-correction optionnelle
+
+- **post_correction**
+  Si ce paramètre est activé, l'API effectue une seconde inférence après la génération initiale.
+  Cette seconde passe sert à :
+  - corriger les fautes d’orthographe et de grammaire
+  - améliorer la fluidité
+  - améliorer la tournure des phrases
+  - conserver le sens initial
+
+  Valeur par défaut : **false**.
+
 ### Bonne pratique
 
 Pour contrôler la forme de la réponse, il est préférable de le préciser directement dans le message utilisateur.
@@ -211,7 +258,8 @@ async def chat(
                     ],
                     "max_tokens": 120,
                     "temperature": 0.2,
-                    "top_p": 0.9
+                    "top_p": 0.9,
+                    "post_correction": True
                 },
             },
             "reformulation": {
@@ -227,7 +275,8 @@ async def chat(
                     ],
                     "max_tokens": 120,
                     "temperature": 0.2,
-                    "top_p": 0.9
+                    "top_p": 0.9,
+                    "post_correction": True
                 },
             },
             "summary_text": {
@@ -243,7 +292,8 @@ async def chat(
                     ],
                     "max_tokens": 120,
                     "temperature": 0.2,
-                    "top_p": 0.9
+                    "top_p": 0.9,
+                    "post_correction": True
                 },
             },
             "content_enrichment": {
@@ -259,7 +309,8 @@ async def chat(
                     ],
                     "max_tokens": 180,
                     "temperature": 0.3,
-                    "top_p": 0.9
+                    "top_p": 0.9,
+                    "post_correction": True
                 },
             },
             "conversation_with_history": {
@@ -283,7 +334,25 @@ async def chat(
                     ],
                     "max_tokens": 80,
                     "temperature": 0.2,
-                    "top_p": 0.9
+                    "top_p": 0.9,
+                    "post_correction": True
+                },
+            },
+            "reformulation_with_post_correction": {
+                "summary": "Reformulation avec post-correction",
+                "description": "Exemple avec seconde passe de correction linguistique activée.",
+                "value": {
+                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Reformule ce texte dans un style professionnel : cette formation permet daborder differents point sur word"
+                        }
+                    ],
+                    "max_tokens": 120,
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "post_correction": True
                 },
             },
         },
@@ -303,6 +372,7 @@ async def chat(
             "max_tokens": payload.max_tokens,
             "temperature": payload.temperature,
             "top_p": payload.top_p,
+            "post_correction": payload.post_correction,
         }.items()
         if v is not None
     }
@@ -313,6 +383,7 @@ async def chat(
         t0 = time.perf_counter()
 
         base_payload = payload.model_dump(exclude_none=True)
+        base_payload.pop("post_correction", None)
         base_payload["messages"] = backend_messages
 
         raw_response = await vllm.chat_completions(base_payload)
@@ -327,6 +398,7 @@ async def chat(
         # on fait une seule relance pour terminer proprement.
         if finish_reason == "length" and content.strip():
             continuation_payload = payload.model_dump(exclude_none=True)
+            continuation_payload.pop("post_correction", None)
             continuation_payload["messages"] = backend_messages + [
                 {
                     "role": "assistant",
@@ -372,7 +444,39 @@ async def chat(
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens,
             }
+        # Post-correction optionnelle : seconde inférence pour améliorer le français
+        if payload.post_correction and final_content.strip():
+            correction_payload = payload.model_dump(exclude_none=True)
+            correction_payload.pop("post_correction", None)
+            correction_payload["messages"] = _build_post_correction_messages(final_content)
+            correction_payload["max_tokens"] = max(payload.max_tokens, 256)
+            correction_payload["temperature"] = 0.1
+            correction_payload["top_p"] = 0.9
 
+            correction_raw_response = await vllm.chat_completions(correction_payload)
+            corrected_content, correction_finish_reason, correction_usage = _extract_main_fields(
+                correction_raw_response
+            )
+
+            if corrected_content.strip():
+                final_content = corrected_content
+                final_finish_reason = correction_finish_reason or final_finish_reason
+
+                prompt_tokens = (final_usage or {}).get("prompt_tokens")
+                completion_tokens = ((final_usage or {}).get("completion_tokens") or 0) + (
+                    (correction_usage or {}).get("completion_tokens") or 0
+                )
+
+                if prompt_tokens is not None:
+                    total_tokens = prompt_tokens + completion_tokens
+                else:
+                    total_tokens = None
+
+                final_usage = {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                }
         latency_ms = (time.perf_counter() - t0) * 1000.0
         log_ai_interaction_success(
             request_id=req_id,
@@ -442,7 +546,7 @@ async def chat(
             feature="chat",
             model_requested=payload.model,
             input_text=input_text,
-            messages_json=messages_json,
+            messages_json=backend_messages,
             request_params_json=request_params_json,
             status_code=502,
             error_type="VLLMUpstreamError",
@@ -462,7 +566,7 @@ async def chat(
             feature="chat",
             model_requested=payload.model,
             input_text=input_text,
-            messages_json=messages_json,
+            messages_json=backend_messages,
             request_params_json=request_params_json,
             status_code=502,
             error_type=type(e).__name__,
