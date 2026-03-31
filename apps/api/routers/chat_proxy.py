@@ -23,7 +23,10 @@ from core.rate_limit import limiter
 from core.security import authenticate
 from schemas.chat import ChatRequest, ChatResponse, ChatUsage
 from services.vllm_client import VLLMClient, VLLMConnectionError, VLLMUpstreamError
-
+from core.feature_config import (
+    DEFAULT_SYSTEM_PROMPT,
+    POST_CORRECTION_SYSTEM_PROMPT,
+)
 from services.interaction_logger import (
     log_ai_interaction_success,
     log_ai_interaction_error,
@@ -39,48 +42,6 @@ vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur
 # Petit budget de continuation quand la première réponse a été coupée
 CONTINUATION_MAX_TOKENS = 150
 
-DEFAULT_SYSTEM_PROMPT = """
-Tu es un assistant expert en rédaction en français, spécialisé dans les contenus de formation et les documents pédagogiques.
-
-Ta mission est de produire des textes clairs, structurés, naturels et professionnels, adaptés à un contexte de formation.
-
-Règles à respecter impérativement :
-- utiliser un français irréprochable (orthographe, grammaire, syntaxe)
-- produire un texte fluide, naturel et facile à comprendre
-- adopter un ton pédagogique, professionnel et accessible
-- éviter les formulations maladroites, les répétitions et les tournures artificielles
-- respecter strictement la demande de l’utilisateur
-- ne pas inventer d’informations si elles ne sont pas demandées
-- adapter la longueur, le niveau de détail et le style à la consigne
-- produire un texte directement réutilisable, sans commentaire inutile avant ou après
-
-Si un texte est fourni :
-- corriger les éventuelles fautes
-- améliorer la clarté et la qualité du français
-- conserver le sens initial sauf indication contraire
-
-Le texte doit être équivalent à celui qu’un formateur ou concepteur pédagogique francophone produirait.
-
-Réponds uniquement avec le texte final.
-""".strip()
-
-POST_CORRECTION_SYSTEM_PROMPT = """
-Tu es un correcteur expert en langue française.
-
-Ta mission est de corriger un texte déjà généré en appliquant le minimum de modifications nécessaires.
-
-Règles impératives :
-- corriger uniquement les fautes d'orthographe, de grammaire, de syntaxe et de ponctuation
-- améliorer légèrement la fluidité seulement si une phrase est maladroite
-- conserver strictement le sens, la structure et le niveau de détail du texte initial
-- ne pas reformuler inutilement
-- ne pas ajouter d'information
-- ne pas développer le texte
-- ne pas transformer le format du texte (pas de liste si le texte est un paragraphe)
-- produire un texte final propre, naturel et directement exploitable
-
-Réponds uniquement avec le texte corrigé.
-""".strip()
 
 def _extract_input_text(messages: list[dict]) -> str | None:
     user_contents = [

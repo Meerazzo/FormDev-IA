@@ -27,7 +27,8 @@ from core.logging import (
 from core.rate_limit import limiter
 from routers.health import router as health_router
 from routers.chat_proxy import router as chat_router
-#from projects.contentSuggest.router import router as content_router  # projet 2
+from routers.surveys import router as surveys_router
+
 
 def create_app() -> FastAPI:
     """
@@ -44,25 +45,26 @@ def create_app() -> FastAPI:
     description="""
     API gateway pour les services d'intelligence artificielle de FormDev.
 
-    Cette API permet d'interroger un modèle de langage local via une interface
-    compatible avec les formats de conversation modernes.
+    Cette API permet aujourd'hui deux grands usages :
 
-    Principe d'utilisation :
+    ### 1. Génération / transformation de texte via `/v1/chat`
+    - reformulation
+    - synthèse
+    - enrichissement de contenu
+    - génération encadrée en français professionnel et pédagogique
 
-    - envoyer une liste de messages structurés (system / user / assistant)
-    - le modèle génère une réponse en fonction de ces messages
+    ### 2. Analyse de questionnaires via `/surveys/analyze`
+    - segmentation d'une réponse ouverte en plusieurs points
+    - classification par sentiment
+    - catégorisation métier
+    - stockage des résultats en base de données
 
-    Structure des rôles :
+    ### Sécurité
+    Les routes exposées sont protégées par clé API et soumises au rate limiting.
 
-    • **system** : instructions générales données au modèle  
-    • **user** : question ou demande envoyée par l'utilisateur  
-    • **assistant** : réponse précédente du modèle (optionnel, pour maintenir un contexte)
-
-    Exemple simple :
-
-    system → définit le comportement du modèle  
-    user → pose la question  
-    assistant → réponse générée par l'IA
+    ### Principe général
+    L'application agit comme une gateway entre les clients FormDev,
+    le serveur d'inférence vLLM et la base PostgreSQL de journalisation / stockage métier.
     """,
         version="1.0",
     )
@@ -76,6 +78,7 @@ def create_app() -> FastAPI:
     # Enregistrement des routes exposées par l'API gateway
     app.include_router(health_router)
     app.include_router(chat_router)
+    app.include_router(surveys_router)
     #app.include_router(content_router)
 
     return app

@@ -1,13 +1,10 @@
 """
 Client HTTP vers le serveur d'inférence vLLM.
 
-Ce module encapsule les appels réseau vers le serveur vLLM afin de :
-
-- isoler la logique d'inférence du reste de l'application
-- centraliser la gestion des erreurs réseau
-- simplifier l'utilisation côté services métier
-
-Le serveur vLLM expose une API compatible OpenAI.
+Ce module centralise les appels au serveur vLLM afin de :
+- isoler la logique réseau du reste de l'application,
+- uniformiser la gestion des erreurs,
+- simplifier l'utilisation côté services métier.
 """
 
 from __future__ import annotations
@@ -16,17 +13,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import httpx
+
 from core.config import settings
+from utils.json import parse_json_lenient
 
 
 class VLLMConnectionError(RuntimeError):
-    """
-    Erreur levée lorsque le serveur vLLM est inaccessible.
-    Typiquement causé par :
-    - serveur arrêté
-    - problème réseau
-    - container inference non démarré
-    """
     pass
 
 
@@ -39,13 +31,6 @@ class VLLMUpstreamError(RuntimeError):
 
 @dataclass
 class VLLMChatResult:
-    """
-    Résultat normalisé d'une génération de texte.
-
-    text : texte généré par le modèle
-    model : modèle utilisé pour la génération
-    raw : réponse brute renvoyée par vLLM (utile pour debug)
-    """
     text: str
     model: Optional[str] = None
     raw: Optional[Dict[str, Any]] = None
@@ -56,30 +41,69 @@ class VLLMClient:
     base_url: str = settings.VLLM_BASE_URL
 
     def __post_init__(self) -> None:
-        # Normalise l'URL du serveur vLLM et configure les timeouts HTTP
         self.base_url = self.base_url.rstrip("/")
-        self._timeout = httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=10.0)
+        self._timeout = httpx.Timeout(
+            connect=10.0,
+            read=300.0,
+            write=300.0,
+            pool=10.0,
+        )
 
     async def chat_completions(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Proxy direct vers l'endpoint OpenAI-compatible de vLLM.
+        Envoie une requête brute au endpoint OpenAI-compatible de vLLM.
 
-        Cette méthode est utilisée par l'endpoint /v1/chat afin de
-        transmettre directement les requêtes des clients vers le modèle.
+        Args:
+            payload: payload JSON complet transmis à l'API vLLM.
+
+        Returns:
+            La réponse JSON brute renvoyée par vLLM.
+
+        Raises:
+            VLLMConnectionError: si le serveur d'inférence est injoignable.
+            TimeoutError: si la requête dépasse le délai autorisé.
+            VLLMUpstreamError: si vLLM retourne un statut HTTP >= 400.
         """
         url = f"{self.base_url}/v1/chat/completions"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                r = await client.post(url, json=payload)
+                response = await client.post(url, json=payload)
         except httpx.ConnectError as e:
             raise VLLMConnectionError("Cannot reach inference server (vLLM)") from e
         except httpx.ReadTimeout as e:
             raise TimeoutError("vLLM read timeout") from e
 
-        if r.status_code >= 400:
-            raise VLLMUpstreamError(r.status_code, r.text)
+        if response.status_code >= 400:
+            raise VLLMUpstreamError(response.status_code, response.text)
 
-        return r.json()
+        return response.json()
+
+    async def generate_json(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 400,
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+        timeout_s: int = 120,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Effectue un appel de génération puis tente de parser la sortie en JSON.
+
+        Cette méthode repose sur un parsing tolérant afin de récupérer un objet JSON
+        même si le modèle entoure le contenu de texte parasite ou de balises markdown.
+        """
+        result = await self.chat(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            timeout_s=timeout_s,
+            model=model,
+        )
+
+        parsed, _ = parse_json_lenient((result.text or "").strip())
+        return parsed
 
     async def chat(
         self,
@@ -91,13 +115,23 @@ class VLLMClient:
         model: Optional[str] = None,
     ) -> VLLMChatResult:
         """
-        Interface simplifiée pour les services internes.
+        Effectue un appel de génération de texte via vLLM à partir d'une liste de messages.
 
-        Cette méthode construit la requête attendue par vLLM et extrait
-        le texte généré afin de fournir un résultat plus simple à exploiter.
+        Cette méthode encapsule la requête réseau et extrait le texte principal
+        retourné par le modèle.
+
+        Returns:
+            Un objet VLLMChatResult contenant :
+            - le texte généré,
+            - le modèle utilisé,
+            - la réponse brute complète.
         """
-        # timeout par requête (sans modifier self._timeout global)
-        timeout = httpx.Timeout(connect=10.0, read=float(timeout_s), write=float(timeout_s), pool=10.0)
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=float(timeout_s),
+            write=float(timeout_s),
+            pool=10.0,
+        )
 
         payload: Dict[str, Any] = {
             "messages": messages,
@@ -111,23 +145,28 @@ class VLLMClient:
         url = f"{self.base_url}/v1/chat/completions"
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(url, json=payload)
+                response = await client.post(url, json=payload)
         except httpx.ConnectError as e:
             raise VLLMConnectionError("Cannot reach inference server (vLLM)") from e
         except httpx.ReadTimeout as e:
             raise TimeoutError("vLLM read timeout") from e
 
-        if r.status_code >= 400:
-            raise VLLMUpstreamError(r.status_code, r.text)
+        if response.status_code >= 400:
+            raise VLLMUpstreamError(response.status_code, response.text)
 
-        data = r.json()
+        data = response.json()
+
         text = ""
         try:
             text = data["choices"][0]["message"]["content"]
         except Exception:
             text = ""
 
-        return VLLMChatResult(text=text, model=data.get("model"), raw=data)
+        return VLLMChatResult(
+            text=text,
+            model=data.get("model"),
+            raw=data,
+        )
 
 
 def get_vllm_client() -> VLLMClient:
