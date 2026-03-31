@@ -12,6 +12,7 @@ Ce service orchestre les différentes étapes du projet 3 :
 
 import time
 import uuid
+import json
 from typing import Any, Dict, List, Optional
 
 from db.models.survey_response import SurveyResponse
@@ -312,10 +313,13 @@ class SurveyAnalyzerService:
             },
             {
                 "role": "user",
-                "content": (
-                    f'{{"question_text": "{question_text}", '
-                    f'"response_text": "{response_text}", '
-                    f'"metadata": {metadata or {}}}}'
+                "content": json.dumps(
+                    {
+                        "question_text": question_text,
+                        "response_text": response_text,
+                        "metadata": metadata or {},
+                    },
+                    ensure_ascii=False,
                 ),
             },
         ]
@@ -365,10 +369,13 @@ class SurveyAnalyzerService:
             },
             {
                 "role": "user",
-                "content": (
-                    f'{{"question_text": "{question_text}", '
-                    f'"point_text": "{point_text}", '
-                    f'"metadata": {metadata or {}}}}'
+                "content": json.dumps(
+                    {
+                        "question_text": question_text,
+                        "point_text": point_text,
+                        "metadata": metadata or {},
+                    },
+                    ensure_ascii=False,
                 ),
             },
         ]

@@ -24,8 +24,8 @@ from core.security import authenticate
 from schemas.chat import ChatRequest, ChatResponse, ChatUsage
 from services.vllm_client import VLLMClient, VLLMConnectionError, VLLMUpstreamError
 from core.feature_config import (
-    DEFAULT_SYSTEM_PROMPT,
-    POST_CORRECTION_SYSTEM_PROMPT,
+    CHAT_DEFAULT_SYSTEM_PROMPT,
+    CHAT_POST_CORRECTION_SYSTEM_PROMPT,
 )
 from services.interaction_logger import (
     log_ai_interaction_success,
@@ -84,7 +84,7 @@ def _build_backend_messages(messages: list[dict]) -> list[dict]:
     non_system_messages = [msg for msg in messages if msg.get("role") != "system"]
 
     return [
-        {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+        {"role": "system", "content": CHAT_DEFAULT_SYSTEM_PROMPT},
         *non_system_messages,
     ]
 
@@ -93,7 +93,7 @@ def _build_post_correction_messages(text: str) -> list[dict]:
     Construit la conversation pour la seconde passe de correction linguistique.
     """
     return [
-        {"role": "system", "content": POST_CORRECTION_SYSTEM_PROMPT},
+        {"role": "system", "content": CHAT_POST_CORRECTION_SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (

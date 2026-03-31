@@ -74,7 +74,7 @@ def log_ai_interaction_success(
         _safe_commit(session)
     except Exception:
         logger.exception(
-            "interaction_log_error type=success request_id=%s endpoint=%s",
+            "interaction_log_error type=error  request_id=%s endpoint=%s",
             request_id,
             endpoint,
         )

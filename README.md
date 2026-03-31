@@ -1,43 +1,53 @@
-# FormDev IA — Infrastructure IA locale
+# FormDev IA — Infrastructure IA locale & API intelligente
 
-Backend IA on-premise (ou OVH) exposé **uniquement via API** pour permettre aux applications FormDev d’interroger un modèle de langage local.
+## 1. Présentation
 
-Cette infrastructure constitue le **socle IA de la plateforme** et permet d’intégrer des capacités d’intelligence artificielle directement dans l’ERP FormDev.
+FormDev IA est une infrastructure d’intelligence artificielle déployée localement (on-premise ou cloud privé type OVH) permettant d’exposer des capacités LLM via une API sécurisée.
 
-Fonctionnalités principales :
+Cette infrastructure constitue le **socle IA de la plateforme FormDev** et permet d’intégrer directement des fonctionnalités avancées dans l’ERP :
 
 - génération de contenu pédagogique
 - assistance conversationnelle
 - analyse de données textuelles
-- futurs pipelines RAG et analyse de satisfaction
+- analyse de questionnaires de satisfaction
+- futurs pipelines RAG
 
-L’infrastructure repose sur un **modèle open source exécuté localement sur GPU**.
+Le système repose sur un **modèle open source exécuté localement sur GPU**, garantissant :
+
+- contrôle total des données
+- latence maîtrisée
+- indépendance vis-à-vis d’API externes
 
 ---
 
-## Architecture générale
+## 2. Architecture générale
 
 L’architecture repose sur une séparation claire entre :
 
-- **l’inférence IA**
-- **l’API gateway**
+- **inférence IA (GPU)**
+- **API gateway (logique métier + sécurité)**
 
-Composants principaux :
+### Composants
 
-### inference
-
-- serveur vLLM
+#### inference
+- serveur **vLLM**
 - moteur d’inférence GPU
-- compatible API OpenAI
+- compatible OpenAI API
 
-### api
-
-- FastAPI
+#### api
+- **FastAPI**
 - authentification par clé API
 - rate limiting
-- proxy vers vLLM
+- logique métier
+- journalisation PostgreSQL
 
-Schéma de fonctionnement :
+#### postgres
+- stockage des logs IA
+- stockage des données métier (questionnaires)
+
+---
+
+### Schéma
 
 ```text
 ERP / Extranet
@@ -46,118 +56,199 @@ ERP / Extranet
 API Gateway (FastAPI)
       │
       ▼
-Serveur d'inférence vLLM
+Serveur vLLM
       │
       ▼
 GPU
 ```
 
-⚠️ L’ERP ne communique **jamais directement avec vLLM**.  
-Toutes les requêtes passent par l’API gateway.
-
-Cela permet :
-
-- contrôle d’accès
-- limitation du trafic
-- journalisation
-- stabilité du service
+⚠️ Le serveur vLLM n’est **jamais exposé directement**.
 
 ---
 
-## Endpoint principal
+## 3. Fonctionnalités
 
-### POST `/v1/chat`
+## 3.1 Endpoint `/v1/chat`
 
-Permet d’interroger le modèle de langage via une interface **compatible OpenAI Chat API**.
+Interface compatible OpenAI Chat API.
 
-Les requêtes doivent contenir une liste de **messages structurés**.
+Permet :
+- reformulation
+- synthèse
+- enrichissement
+- génération encadrée
 
-Chaque message possède un rôle :
+### ⚠️ Important
 
-| rôle | description |
-|------|-------------|
-| `system` | instructions générales données au modèle |
-| `user` | message envoyé par l’utilisateur |
-| `assistant` | réponse précédente du modèle (optionnel) |
+Le prompt système est **contrôlé côté backend**.
 
-Exemple de requête :
+➡️ Les messages `system` envoyés par le client sont ignorés.
+
+---
+
+### Exemple requête
 
 ```json
 {
-  "model": "Qwen/Qwen2.5-7B-Instruct",
   "messages": [
-    {
-      "role": "system",
-      "content": "Tu es un assistant pédagogique spécialisé dans la formation bureautique."
-    },
     {
       "role": "user",
       "content": "Explique ce qu'est un style dans Word."
     }
   ],
-  "max_tokens": 150,
-  "temperature": 0.7
+  "max_tokens": 150
 }
 ```
 
 ---
 
-## Réponse de l’API
-
-Exemple de réponse :
+### Exemple réponse
 
 ```json
 {
   "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-  "content": "Un style dans Word permet d'appliquer automatiquement une mise en forme cohérente à des titres ou paragraphes.",
-  "finish_reason": "stop",
+  "content": "Un style dans Word permet d'appliquer automatiquement une mise en forme cohérente.",
   "usage": {
-    "prompt_tokens": 47,
-    "completion_tokens": 13,
-    "total_tokens": 60
+    "prompt_tokens": 40,
+    "completion_tokens": 15,
+    "total_tokens": 55
   },
-  "latency_ms": 842.3
+  "latency_ms": 820
 }
 ```
 
 ---
 
-## Multi-utilisateurs et gestion de charge
+## 3.2 Endpoint `/surveys/analyze`
 
-Le serveur d’inférence **vLLM** permet de gérer plusieurs requêtes simultanément.
+Analyse une réponse ouverte de questionnaire.
 
-Le mécanisme repose sur le **KV cache paginé** :
+### Pipeline
 
-- la mémoire GPU est divisée en pages
-- les requêtes partagent efficacement ces pages de mémoire
-- les générations de tokens sont intercalées entre plusieurs utilisateurs
-
-Cela permet de servir **plusieurs utilisateurs simultanément** avec une seule instance GPU.
-
-Pour protéger l’infrastructure, un **rate limiting** est appliqué :
-
-```text
-30 requêtes / minute / client
-```
-
-Cela évite :
-
-- la saturation GPU
-- les abus d’API
-- les blocages du serveur
+1. nettoyage texte
+2. détection cas vides (RAS, néant…)
+3. segmentation en points
+4. classification :
+   - sentiment
+   - catégorie métier
+5. stockage en base
 
 ---
 
-## Prérequis
+### Exemple requête
 
-- Linux (Debian / Ubuntu)
-- Docker
-- Docker Compose
+```json
+{
+  "survey_id": "formation_word",
+  "question_id": "q1",
+  "question_text": "Ce que vous avez particulièrement apprécié :",
+  "response_text": "Petit groupe, tout le monde peut prendre la parole. Formateur clair.",
+  "metadata": {
+    "client": "Entreprise X"
+  }
+}
+```
+
+---
+
+### Exemple réponse
+
+```json
+{
+  "response_id": "uuid",
+  "points": [
+    {
+      "point_id": "uuid_pt_1",
+      "text": "Petit groupe, tout le monde peut prendre la parole.",
+      "sentiment": "positive",
+      "category": "pedagogie",
+      "confidence": null
+    }
+  ]
+}
+```
+
+---
+
+## 4. Multi-utilisateurs & performance
+
+vLLM utilise un **KV cache paginé** :
+
+- mémoire GPU partagée
+- batching automatique
+- exécution concurrente
+
+➡️ permet de servir plusieurs utilisateurs simultanément
+
+---
+
+## 5. Base de données
+
+### Tables principales
+
+#### ai_interactions
+- logs complets IA
+- tokens, latence, erreurs
+
+#### survey_responses
+- réponses brutes
+
+#### response_points
+- points extraits + classification
+
+#### point_feedback (future)
+- corrections opérateur
+
+---
+
+## 6. Sécurité
+
+### Authentification
+
+Header obligatoire :
+
+```
+X-API-Key
+```
+
+---
+
+### Rate limiting
+
+Actuellement :
+```
+30 requêtes / minute / IP
+```
+
+⚠️ (évolutif vers par client)
+
+---
+
+### Isolation
+
+- vLLM non exposé
+- API gateway obligatoire
+
+---
+
+### Firewall
+
+Ports :
+
+| port | usage |
+|------|------|
+| 22 | SSH |
+| 8080 | API |
+| 8000 | vLLM interne |
+
+---
+
+## 7. Prérequis
+
+- Linux
+- Docker + Compose
 - GPU NVIDIA
-- drivers NVIDIA installés
 - NVIDIA Container Toolkit
-
-Vérification :
 
 ```bash
 nvidia-smi
@@ -165,224 +256,87 @@ nvidia-smi
 
 ---
 
-## Démarrage rapide
+## 8. Installation
 
-### 1. Configuration
+### 1. Config
 
 ```bash
 cp infra/.env.example infra/.env
-nano infra/.env
 ```
 
-### 2. Lancement des services
+---
+
+### 2. Lancement
 
 ```bash
-docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
+docker compose -f infra/docker-compose.yml up -d --build
 ```
 
-Vérification :
+---
 
-```bash
-docker compose -f infra/docker-compose.yml ps
-```
-
-### 3. Vérifier que l’API fonctionne
+### 3. Vérification
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-Réponse attendue :
-
-```json
-{"status": "ok"}
-```
-
-### 4. Test de génération
-
-```bash
-API_KEY="FormdevINF26"
-
-curl http://localhost:8080/v1/chat \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${API_KEY}" \
-  -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
-    "messages": [
-      {"role":"user","content":"Dis bonjour en une phrase."}
-    ],
-    "max_tokens": 60
-  }'
-```
-
 ---
 
-## Configuration (`.env`)
-
-Variables principales :
+## 9. Configuration (.env)
 
 | variable | description |
-|----------|-------------|
-| `API_KEYS` | clés API autorisées |
-| `RATE_LIMIT_RPM` | limite requêtes/minute |
-| `MODEL_ID` | modèle Hugging Face |
-| `MAX_MODEL_LEN` | taille contexte max |
-| `DTYPE` | type de précision GPU |
-| `API_PORT` | port de l’API |
-| `VLLM_PORT` | port interne vLLM |
-| `HF_CACHE` | cache Hugging Face |
+|----------|------------|
+| API_KEYS | clés autorisées |
+| RATE_LIMIT_RPM | limite |
+| MODEL_ID | modèle |
+| MAX_MODEL_LEN | contexte |
+| DTYPE | précision |
+| API_PORT | port API |
 
-Exemple :
+---
 
-```env
-API_KEYS=client1:key123,client2:key456
-RATE_LIMIT_RPM=30
-MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+## 10. Logs
+
+```bash
+docker compose logs -f api
+docker compose logs -f inference
 ```
 
 ---
 
-## Logs et debug
-
-Logs API :
-
-```bash
-docker compose -f infra/docker-compose.yml logs -f api
-```
-
-Logs serveur IA :
-
-```bash
-docker compose -f infra/docker-compose.yml logs -f inference
-```
-
-Emplacement des logs Docker :
-
-```bash
-CID=$(docker ps -qf "name=infra-api-1")
-docker inspect --format='{{.LogPath}}' "$CID"
-```
-
----
-
-## Surveillance GPU
+## 11. Monitoring GPU
 
 ```bash
 nvidia-smi
 ```
 
-Permet de vérifier :
-
-- utilisation GPU
-- mémoire GPU
-- processus actifs
-
 ---
 
-## Exploitation via scripts
-
-Les scripts facilitent l’administration.
-
-Sur ce serveur Docker est accessible uniquement en **root**.
-
-Connexion :
-
-```bash
-su -
-cd /home/meara/Formdev_IA
-```
-
-Commandes principales :
+## 12. Scripts
 
 ```bash
 ./scripts/up.sh
 ./scripts/restart.sh
-./scripts/down.sh
-./scripts/status.sh
-./scripts/logs.sh api
-./scripts/logs.sh inference
+./scripts/logs.sh
 ```
 
 ---
 
-## Tests automatisés
+## 13. Bonnes pratiques
 
-Smoke test :
-
-```bash
-API_KEY="FormdevINF26" ./scripts/smoke_test.sh
-```
-
-Benchmark :
-
-```bash
-API_KEY="FormdevINF26" N=20 ./scripts/bench.sh
-```
+- centraliser la config
+- éviter les prompts en dur
+- privilégier JSON strict
+- préférer "unknown" à erreur
 
 ---
 
-## Sécurité
+## 14. Roadmap
 
-Principes appliqués :
+- feedback opérateur
+- few-shot dynamique
+- batch 1M réponses
+- RAG
+- vector DB (Qdrant)
+- workers async
 
-### Isolation de l’inférence
-
-Le serveur vLLM **n’est pas exposé publiquement**.
-
-Seule l’API gateway est accessible.
-
-### Authentification
-
-Chaque requête doit fournir l’en-tête :
-
-```text
-X-API-Key
-```
-
-Les clés autorisées sont définies dans `.env`.
-
-### Rate limiting
-
-Limitation :
-
-```text
-30 requêtes / minute / client
-```
-
-Protection contre :
-
-- abus d’API
-- saturation GPU
-
-### Firewall
-
-Le serveur utilise **UFW**.
-
-Ports autorisés :
-
-| port | usage |
-|------|-------|
-| `22` | SSH |
-| `8080` | API FormDev |
-| `8000` | vLLM (interne uniquement) |
-
-Tous les autres ports sont bloqués.
-
----
-
-## Évolutions prévues
-
-L’infrastructure est conçue pour accueillir d’autres services IA.
-
-Projets futurs :
-
-- RAG multi-documents
-- analyse de satisfaction
-- classification automatique
-- base d’exemples pédagogiques
-
-Services à ajouter :
-
-- Postgres
-- Qdrant (vector database)
-- Redis + workers

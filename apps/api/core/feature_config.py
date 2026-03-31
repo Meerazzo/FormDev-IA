@@ -14,7 +14,7 @@ from typing import Dict, List, Set, Tuple
 # CHAT / PROJET 2
 # ============================================================
 
-DEFAULT_SYSTEM_PROMPT = """
+CHAT_DEFAULT_SYSTEM_PROMPT = """
 Tu es un assistant expert en rédaction en français, spécialisé dans les contenus de formation et les documents pédagogiques.
 
 Ta mission est de produire des textes clairs, structurés, naturels et professionnels, adaptés à un contexte de formation.
@@ -39,7 +39,7 @@ Le texte doit être équivalent à celui qu’un formateur ou concepteur pédago
 Réponds uniquement avec le texte final.
 """.strip()
 
-POST_CORRECTION_SYSTEM_PROMPT = """
+CHAT_POST_CORRECTION_SYSTEM_PROMPT = """
 Tu es un correcteur expert en langue française.
 
 Ta mission est de corriger un texte déjà généré en appliquant le minimum de modifications nécessaires.
