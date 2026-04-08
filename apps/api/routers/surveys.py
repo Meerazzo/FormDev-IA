@@ -10,7 +10,7 @@ issues de questionnaires de satisfaction :
 Les endpoints sont protégés par clé API et soumis au rate limiting.
 """
 
-from fastapi import APIRouter, Depends, Request, Security
+from fastapi import APIRouter, Depends, Request, Security, HTTPException
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,16 @@ from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
 from db.session import get_db
-from schemas.surveys import SurveyAnalyzeRequest, SurveyAnalyzeResponse
+from schemas.surveys import (
+    SurveyAnalyzeRequest,
+    SurveyAnalyzeResponse,
+    SurveyFormPreviewRequest,
+    SurveyFormPreviewResponse,
+    SurveyFormAnalyzeRequest,
+    SurveyFormAnalyzeResponse,
+)
+from services.survey_form_analyzer import SurveyFormAnalyzerService
+from services.survey_question_selector import SurveyQuestionSelectorService
 from services.survey_analyzer import SurveyAnalyzerService
 from services.vllm_client import VLLMClient
 
@@ -27,6 +36,42 @@ RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
 
 router = APIRouter(prefix="/surveys", tags=["surveys"])
 
+@router.post(
+    "/forms/preview",
+    response_model=SurveyFormPreviewResponse,
+    summary="Prévisualiser les questions pertinentes d'un formulaire",
+    description="""
+Extrait les questions distinctes d'un formulaire et propose, via le modèle,
+quelles questions doivent être analysées ou ignorées pour la suite du traitement.
+
+Cette route sert de pré-étape au traitement d'un formulaire complet.
+Elle permet de sélectionner uniquement les questions réellement pertinentes
+pour une analyse d'avis sur la formation.
+""",
+    responses={
+        200: {"description": "Prévisualisation réalisée avec succès"},
+        401: {"description": "Clé API invalide ou absente"},
+        429: {"description": "Trop de requêtes"},
+        502: {"description": "Erreur de communication avec le serveur d'inférence"},
+    },
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def preview_form_questions(
+    request: Request,
+    payload: SurveyFormPreviewRequest,
+    api_key: str | None = Security(api_key_header),
+):
+    _, _client_id = authenticate(api_key)
+
+    selector = SurveyQuestionSelectorService(
+        vllm_client=VLLMClient(),
+    )
+
+    distinct_questions = selector.extract_distinct_questions(
+        [item.model_dump() for item in payload.items]
+    )
+
+    return await selector.select_questions(distinct_questions)
 
 @router.post(
     "/analyze",
@@ -140,3 +185,52 @@ async def analyze_survey(
         request_id=req_id,
         client_id=client_id,
     )
+
+@router.post(
+    "/forms/analyze",
+    response_model=SurveyFormAnalyzeResponse,
+    summary="Analyser un formulaire complet de satisfaction",
+    description="""
+Analyse un formulaire complet contenant plusieurs couples question/réponse.
+
+Étapes :
+- extraction des questions distinctes,
+- sélection automatique des questions pertinentes,
+- stockage de toutes les réponses,
+- analyse uniquement des réponses associées aux questions retenues.
+
+Les réponses ignorées sont également stockées en base avec une indication
+de décision dans les métadonnées.
+""",
+    responses={
+        200: {"description": "Analyse du formulaire réalisée avec succès"},
+        401: {"description": "Clé API invalide ou absente"},
+        429: {"description": "Trop de requêtes"},
+        502: {"description": "Erreur de communication avec le serveur d'inférence"},
+    },
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def analyze_form(
+    request: Request,
+    payload: SurveyFormAnalyzeRequest,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+):
+    _, client_id = authenticate(api_key)
+    req_id = getattr(request.state, "request_id", None)
+
+    service = SurveyFormAnalyzerService(
+        vllm_client=VLLMClient(),
+        db=db,
+    )
+
+    try:
+        return await service.analyze_form(
+            survey_id=payload.survey_id,
+            items=[item.model_dump() for item in payload.items],
+            metadata=payload.metadata,
+            request_id=req_id,
+            client_id=client_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

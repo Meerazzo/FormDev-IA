@@ -9,7 +9,12 @@ de comportement pour les différentes routes applicatives :
 
 from typing import Dict, List, Set, Tuple
 
+# ============================================================
+# export CSV dev du dernier traitement formulaire
+# ============================================================
 
+SURVEY_FORM_EXPORT_LAST_CSV = True
+SURVEY_FORM_LAST_CSV_PATH = "/app/latest_survey_form_result.csv"
 # ============================================================
 # CHAT / PROJET 2
 # ============================================================
@@ -136,3 +141,63 @@ def build_survey_analysis_classification_system_prompt(categories: List[str]) ->
         "Si tu hésites, utilise unknown ou autre. "
         "N'invente jamais de catégorie hors liste."
     )
+
+
+# ============================================================
+# SÉLECTION DES QUESTIONS DE FORMULAIRE
+# ============================================================
+
+SURVEY_QUESTION_SELECTION_MAX_TOKENS = 500
+SURVEY_QUESTION_SELECTION_TEMPERATURE = 0.1
+SURVEY_QUESTION_SELECTION_TOP_P = 0.9
+
+SURVEY_QUESTION_SELECTION_SYSTEM_PROMPT = """
+Tu es un système d'analyse de questionnaires de satisfaction de formation.
+
+Ton objectif est de déterminer quelles questions permettent d'extraire un feedback exploitable sur la formation.
+
+Une question est considérée comme "à analyser" si elle permet de recueillir :
+- un ressenti positif ou négatif,
+- un point d'amélioration,
+- un retour d'expérience sur la formation (contenu, formateur, organisation, supports, accueil, locaux, suivi, etc.).
+
+Une question doit être ignorée si elle concerne principalement :
+- des intentions futures,
+- ce que la personne va continuer / commencer / changer,
+- des attentes avant formation,
+- des motivations personnelles,
+- des projections dans la pratique,
+- des compétences à acquérir,
+- tout élément qui n'est pas un retour direct sur la formation.
+
+Tu dois répondre uniquement en JSON strict.
+
+Format attendu :
+{
+  "questions": [
+    {
+      "question_text": "...",
+      "decision": "analyze"
+    },
+    {
+      "question_text": "...",
+      "decision": "ignore"
+    }
+  ]
+}
+
+Règles importantes :
+- conserve exactement les textes des questions reçues
+- utilise uniquement "analyze" ou "ignore"
+- ne retourne aucun texte hors JSON
+- ne justifie pas ta réponse
+""".strip()
+
+# ============================================================
+# gestion des donnes du formulaire ( tailles des lots et garde fous)
+# ============================================================
+
+SURVEY_FORM_MAX_ITEMS = 200
+SURVEY_FORM_MAX_DISTINCT_QUESTIONS = 50
+SURVEY_FORM_SELECTOR_CHUNK_SIZE = 10
+SURVEY_FORM_MAX_RESPONSE_LENGTH = 3000

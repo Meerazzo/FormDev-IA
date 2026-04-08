@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from db.models.survey_response import SurveyResponse
 from db.models.response_point import ResponsePoint
+from services.survey_preprocessor import SurveyPreprocessor
 from services.interaction_logger import (
     log_ai_interaction_error,
     log_ai_interaction_success,
@@ -27,7 +28,6 @@ from core.feature_config import (
     SURVEY_ANALYSIS_ALLOWED_CATEGORIES,
     SURVEY_ANALYSIS_CLASSIFICATION_MAX_TOKENS,
     SURVEY_ANALYSIS_CLASSIFICATION_TEMPERATURE,
-    SURVEY_ANALYSIS_EMPTY_MARKERS,
     SURVEY_ANALYSIS_NAME,
     SURVEY_ANALYSIS_PIPELINE_NAME,
     SURVEY_ANALYSIS_PIPELINE_VERSION,
@@ -35,7 +35,6 @@ from core.feature_config import (
     SURVEY_ANALYSIS_SEGMENTATION_MAX_TOKENS,
     SURVEY_ANALYSIS_SEGMENTATION_SYSTEM_PROMPT,
     SURVEY_ANALYSIS_SEGMENTATION_TEMPERATURE,
-    SURVEY_ANALYSIS_SHORT_OPINIONS,
     SURVEY_ANALYSIS_TOP_P,
     build_survey_analysis_classification_system_prompt,
 )
@@ -55,6 +54,7 @@ class SurveyAnalyzerService:
     ALLOWED_CATEGORIES = SURVEY_ANALYSIS_ALLOWED_CATEGORIES
 
     def __init__(self, vllm_client, db):
+        self.preprocessor = SurveyPreprocessor()
         self.vllm_client = vllm_client
         self.db = db
 
@@ -62,12 +62,6 @@ class SurveyAnalyzerService:
         if not text:
             return ""
         return " ".join(text.strip().split())
-
-    def _is_empty_or_ignorable(self, text: str) -> bool:
-        return text.lower().strip() in SURVEY_ANALYSIS_EMPTY_MARKERS
-
-    def _get_short_opinion(self, text: str) -> Optional[tuple[str, str]]:
-        return SURVEY_ANALYSIS_SHORT_OPINIONS.get(text.lower().strip())
 
     def _build_response_record(
         self,
@@ -200,29 +194,48 @@ class SurveyAnalyzerService:
         # afin d'éviter les collisions et de ne pas dépendre du client.
 
         response_id = str(uuid.uuid4())
-        normalized_text = self._normalize_text(response_text)
+
+        pre = self.preprocessor.preprocess(
+            question_text=question_text,
+            response_text=response_text,
+        )
+        normalized_question_text = pre["normalized_question_text"]
+        normalized_response_text = pre["normalized_response_text"]
+
+        analysis_metadata = {
+            **(metadata or {}),
+            "response_kind": pre["response_kind"],
+            "skip_reason": pre["skip_reason"],
+            "question_kind": pre["question_kind"],
+        }
 
         response = self._build_response_record(
             survey_id=survey_id,
             question_id=question_id,
-            question_text=question_text,
+            question_text=normalized_question_text,
             response_id=response_id,
-            response_text=normalized_text,
-            metadata=metadata,
+            response_text=normalized_response_text,
+            metadata=analysis_metadata,
         )
         self.db.add(response)
         self.db.flush()
 
-        if self._is_empty_or_ignorable(normalized_text):
+        forced_ignore = bool((metadata or {}).get("force_ignore"))
+        if forced_ignore:
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
-        short_opinion = self._get_short_opinion(normalized_text)
-        if short_opinion:
-            sentiment, category = short_opinion
+        if not pre["should_analyze"]:
+            self._finalize_response(response)
+            return {"response_id": response_id, "points": []}
+
+        if pre["response_kind"] == "short_simple_opinion" and pre["short_opinion"]:
+            sentiment = pre["short_opinion"]["sentiment"]
+            category = pre["short_opinion"]["category"]
+
             result = self._build_short_opinion_result(
                 response_id=response_id,
-                text=normalized_text,
+                text=normalized_response_text,
                 sentiment=sentiment,
                 category=category,
             )
@@ -242,9 +255,9 @@ class SurveyAnalyzerService:
             return result
 
         segmented_points = await self._segment(
-            question_text=question_text,
-            response_text=normalized_text,
-            metadata=metadata,
+            question_text=normalized_question_text,
+            response_text=normalized_response_text,
+            metadata=analysis_metadata,
             response_id=response_id,
             request_id=request_id,
             client_id=client_id,
@@ -257,9 +270,9 @@ class SurveyAnalyzerService:
         points: List[Dict[str, Any]] = []
         for idx, point_text in enumerate(segmented_points, start=1):
             cls = await self._classify(
-                question_text=question_text,
+                question_text=normalized_question_text,
                 point_text=point_text,
-                metadata=metadata,
+                metadata=analysis_metadata,
                 response_id=response_id,
                 request_id=request_id,
                 client_id=client_id,
