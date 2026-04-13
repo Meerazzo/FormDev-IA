@@ -1,22 +1,21 @@
 """
-Analyse d'un formulaire complet de satisfaction.
-
-Ce service orchestre :
-- l'extraction des questions distinctes,
-- la sélection des questions pertinentes,
-- le stockage des réponses,
-- l'analyse unitaire des réponses retenues.
+Gestion des traitements d'analyse de formulaires.
 """
-from utils.dev_csv_export import export_latest_form_result_to_csv
+
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from services.survey_analyzer import SurveyAnalyzerService
-from services.survey_question_selector import SurveyQuestionSelectorService
 from core.feature_config import (
     SURVEY_FORM_MAX_DISTINCT_QUESTIONS,
     SURVEY_FORM_MAX_ITEMS,
     SURVEY_FORM_MAX_RESPONSE_LENGTH,
 )
+from db.models.survey_processing_job import SurveyProcessingJob
+from services.survey_analyzer import SurveyAnalyzerService
+from services.survey_question_selector import SurveyQuestionSelectorService
+from utils.dev_csv_export import export_latest_form_result_to_csv
+
 
 class SurveyFormAnalyzerService:
     def __init__(self, vllm_client, db):
@@ -24,7 +23,6 @@ class SurveyFormAnalyzerService:
         self.db = db
         self.question_selector = SurveyQuestionSelectorService(vllm_client=vllm_client)
         self.survey_analyzer = SurveyAnalyzerService(vllm_client=vllm_client, db=db)
-
 
     @staticmethod
     def _validate_form_payload(items: List[Dict[str, Any]]) -> None:
@@ -56,7 +54,101 @@ class SurveyFormAnalyzerService:
 
         return mapping
 
-    async def analyze_form(
+    def create_processing_job(
+        self,
+        survey_id: str,
+        items: List[Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]] = None,
+        client_id: Optional[str] = None,
+    ) -> SurveyProcessingJob:
+        self._validate_form_payload(items)
+
+        distinct_questions = self.question_selector.extract_distinct_questions(items)
+        if len(distinct_questions) > SURVEY_FORM_MAX_DISTINCT_QUESTIONS:
+            raise ValueError(
+                f"Too many distinct questions: {len(distinct_questions)}. "
+                f"Maximum allowed is {SURVEY_FORM_MAX_DISTINCT_QUESTIONS}."
+            )
+
+        processing_id = str(uuid.uuid4())
+
+        job = SurveyProcessingJob(
+            processing_id=processing_id,
+            survey_id=survey_id,
+            client_id=client_id,
+            status="PENDING",
+            request_payload_json={
+                "survey_id": survey_id,
+                "items": items,
+                "metadata": metadata or {},
+            },
+        )
+
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def get_processing_job(self, processing_id: str, client_id: Optional[str] = None) -> Optional[SurveyProcessingJob]:
+        query = self.db.query(SurveyProcessingJob).filter(
+            SurveyProcessingJob.processing_id == processing_id
+        )
+        if client_id is not None:
+            query = query.filter(SurveyProcessingJob.client_id == client_id)
+        return query.first()
+
+    async def run_processing_job(
+        self,
+        processing_id: str,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        job = self.db.query(SurveyProcessingJob).filter(
+            SurveyProcessingJob.processing_id == processing_id
+        ).first()
+
+        if not job:
+            raise ValueError(f"Processing job not found: {processing_id}")
+
+        payload = job.request_payload_json or {}
+        survey_id = payload.get("survey_id")
+        items = payload.get("items") or []
+        metadata = payload.get("metadata") or {}
+        client_id = job.client_id
+
+        job.status = "STARTED"
+        job.started_at = datetime.now(timezone.utc)
+        self.db.commit()
+
+        try:
+            result = await self._analyze_form_payload(
+                survey_id=survey_id,
+                items=items,
+                metadata=metadata,
+                request_id=request_id,
+                client_id=client_id,
+            )
+
+            job.status = "FINISHED"
+            job.result_json = result
+            job.finished_at = datetime.now(timezone.utc)
+            job.error_message = None
+            self.db.commit()
+
+            try:
+                export_latest_form_result_to_csv(result)
+            except Exception:
+                pass
+
+            return result
+
+        except Exception as e:
+            job.status = "FAILED"
+            job.error_message = str(e)
+            job.finished_at = datetime.now(timezone.utc)
+            self.db.commit()
+            raise
+
+    async def _analyze_form_payload(
         self,
         survey_id: str,
         items: List[Dict[str, Any]],
@@ -64,13 +156,7 @@ class SurveyFormAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        self._validate_form_payload(items)
         distinct_questions = self.question_selector.extract_distinct_questions(items)
-        if len(distinct_questions) > SURVEY_FORM_MAX_DISTINCT_QUESTIONS:
-            raise ValueError(
-                f"Too many distinct questions: {len(distinct_questions)}. "
-                f"Maximum allowed is {SURVEY_FORM_MAX_DISTINCT_QUESTIONS}."
-            )
         selection_result = await self.question_selector.select_questions_in_chunks(distinct_questions)
 
         question_decisions = selection_result.get("questions", [])
@@ -115,8 +201,6 @@ class SurveyFormAnalyzerService:
                     }
                 )
             else:
-                # Même si la question est ignorée, on stocke la réponse
-                # dans survey_responses pour conserver la traçabilité du formulaire.
                 ignored = await self.survey_analyzer.analyze(
                     survey_id=survey_id,
                     question_id=question_id,
@@ -141,15 +225,8 @@ class SurveyFormAnalyzerService:
                     }
                 )
 
-        result = {
+        return {
             "survey_id": survey_id,
             "question_decisions": question_decisions,
             "responses": response_results,
         }
-
-        try:
-            export_latest_form_result_to_csv(result)
-        except Exception:
-            pass
-
-        return result

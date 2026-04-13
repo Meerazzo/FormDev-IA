@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, Float, Text, Index
+from sqlalchemy import BigInteger, Column, DateTime, Float, Integer, Text, Index
 from sqlalchemy.sql import func
 
 from db.base import Base
@@ -21,11 +21,19 @@ class ResponsePoint(Base):
     response_id = Column(Text, nullable=False)
 
     point_text = Column(Text, nullable=False)
-    sentiment = Column(Text, nullable=True)   # positive / negative / neutral / unknown
-    category = Column(Text, nullable=True)    # catégorie métier / autre / unknown
+
+    # Nouvelle sémantique :
+    # 1 = très négatif
+    # 2 = négatif
+    # 3 = neutre
+    # 4 = positif
+    # 5 = très positif
+    sentiment = Column(Integer, nullable=True)
+
+    category = Column(Text, nullable=True)
     confidence = Column(Float, nullable=True)
 
-    source = Column(Text, nullable=False, default="model")  # model / operator
+    source = Column(Text, nullable=False, default="model")
     is_active = Column(Text, nullable=False, default="true")
 
     pipeline_name = Column(Text, nullable=True)

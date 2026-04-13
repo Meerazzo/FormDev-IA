@@ -13,7 +13,6 @@ Fonctionnalités :
 """
 
 import time
-import logging
 
 from fastapi import APIRouter, HTTPException, Request, Security, Body
 from fastapi.security import APIKeyHeader
@@ -74,32 +73,42 @@ def _join_contents(first: str, continuation: str) -> str:
         return first.strip()
     return f"{first.rstrip()} {continuation.lstrip()}".strip()
 
-def _build_backend_messages(messages: list[dict]) -> list[dict]:
+def _build_backend_messages(messages: list[dict], system_prompt: str | None = None) -> list[dict]:
     """
-    Construit la conversation envoyée au modèle en imposant
-    le prompt système côté backend.
+    Construit la conversation envoyée au modèle.
 
-    Tous les messages 'system' fournis par le client sont ignorés.
+    Tous les messages 'system' fournis dans l'historique sont ignorés
+    afin d'éviter les doublons. Un seul prompt système est injecté :
+    - celui fourni explicitement par le client si présent
+    - sinon le prompt système par défaut du backend
     """
     non_system_messages = [msg for msg in messages if msg.get("role") != "system"]
+    final_system_prompt = (system_prompt or CHAT_DEFAULT_SYSTEM_PROMPT).strip()
 
     return [
-        {"role": "system", "content": CHAT_DEFAULT_SYSTEM_PROMPT},
+        {"role": "system", "content": final_system_prompt},
         *non_system_messages,
     ]
 
-def _build_post_correction_messages(text: str) -> list[dict]:
+def _build_post_correction_messages(
+    text: str,
+    post_correction_prompt: str | None = None,
+) -> list[dict]:
     """
     Construit la conversation pour la seconde passe de correction linguistique.
+
+    Le prompt de correction peut être fourni par le client.
+    À défaut, on utilise le prompt de correction par défaut du backend.
     """
+    final_post_prompt = (post_correction_prompt or CHAT_POST_CORRECTION_SYSTEM_PROMPT).strip()
+
     return [
-        {"role": "system", "content": CHAT_POST_CORRECTION_SYSTEM_PROMPT},
+        {"role": "system", "content": final_post_prompt},
         {
             "role": "user",
             "content": (
                 "Corrige ce texte avec un minimum de modifications. "
-                "Ne développe pas, ne restructure pas inutilement, "
-                "et conserve le même format :\n\n"
+                "Améliore la langue si nécessaire, mais conserve le sens général et un format comparable :\n\n"
                 f"{text}"
             ),
         },
@@ -129,7 +138,7 @@ Chaque message contient :
 Rôles possibles :
 - **user** : demande principale envoyée par l'application
 - **assistant** : réponse précédente du modèle, si l'on souhaite conserver un historique conversationnel
-- **system** : message optionnel côté client, mais le cadrage principal du modèle est défini côté serveur pour garantir une qualité homogène des réponses
+- **system** : message système possible côté client via le champ system_prompt. Si aucun prompt système n’est fourni, l’API utilise un prompt par défaut côté serveur.
 
 ### Recommandation d'usage
 
@@ -140,13 +149,15 @@ Exemples :
 - `Résume ce texte en 3 phrases claires : ...`
 - `Développe cet intitulé sous la forme d'un paragraphe : ...`
 
-### Qualité rédactionnelle
+### Personnalisation des prompts
 
-Le comportement général du modèle est encadré côté serveur afin de garantir :
-- un français correct et fluide
-- un ton professionnel
-- une réponse directement exploitable
-- une meilleure cohérence entre les différents usages
+L'API peut fonctionner :
+- avec les prompts par défaut du backend
+- ou avec des prompts fournis dans la requête
+
+Champs disponibles :
+- `system_prompt` : remplace le prompt système par défaut
+- `post_correction_prompt` : remplace le prompt de correction si `post_correction=true`
 
 ### Paramètres de génération
 
@@ -206,117 +217,181 @@ async def chat(
     payload: ChatRequest = Body(
         ...,
         openapi_examples={
-            "simple_question": {
-                "summary": "Question simple",
-                "description": "Exemple minimal d'utilisation de la route.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Explique ce qu'est un style dans Word en 3 phrases simples."
-                        }
-                    ],
-                    "max_tokens": 120,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
-            },
-            "reformulation": {
-                "summary": "Reformulation professionnelle",
-                "description": "Améliorer un texte en corrigeant le français et en le rendant plus fluide.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Reformule ce texte dans un style professionnel et fluide, sans changer le sens : Cette formation permet d aborder differents points liés à Word."
-                        }
-                    ],
-                    "max_tokens": 120,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
-            },
-            "summary_text": {
-                "summary": "Résumé",
-                "description": "Synthétiser un contenu en quelques phrases claires.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Résume ce texte en 3 phrases claires et professionnelles : Les styles dans Word permettent d appliquer rapidement une mise en forme cohérente à différents éléments d un document. Ils facilitent l organisation, la lisibilité et la structuration des contenus. Leur bonne utilisation permet aussi de gagner du temps lors de la mise en page."
-                        }
-                    ],
-                    "max_tokens": 120,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
-            },
-            "content_enrichment": {
-                "summary": "Enrichissement de contenu",
-                "description": "Développer un intitulé ou une idée sous forme de paragraphe réutilisable.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Développe cet intitulé sous la forme d'un paragraphe clair, fluide et professionnel, réutilisable dans un catalogue de formation : Travailler les titres dans Word"
-                        }
-                    ],
-                    "max_tokens": 180,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
-            },
-            "conversation_with_history": {
-                "summary": "Conversation avec historique",
-                "description": "Exemple avec conservation d'un échange précédent.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Résume ce texte en 3 phrases : Les styles dans Word permettent d harmoniser la mise en forme d un document."
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Les styles dans Word permettent d'appliquer une mise en forme cohérente à un document. Ils facilitent l'organisation du contenu et améliorent sa lisibilité. Leur utilisation permet également de gagner du temps dans la mise en page."
-                        },
-                        {
-                            "role": "user",
-                            "content": "Fais une version encore plus courte."
-                        }
-                    ],
-                    "max_tokens": 80,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
-            },
-            "reformulation_with_post_correction": {
-                "summary": "Reformulation avec post-correction",
-                "description": "Exemple avec seconde passe de correction linguistique activée.",
-                "value": {
-                    "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Reformule ce texte dans un style professionnel : cette formation permet daborder differents point sur word"
-                        }
-                    ],
-                    "max_tokens": 120,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "post_correction": True
-                },
+        "reformulation_catalogue_sport": {
+            "summary": "Reformulation d'une description de formation sport",
+            "description": "Exemple de reformulation d'un texte de présentation destiné à un catalogue de formation.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de reformulation en français. "
+                    "Tu reformules les textes dans un style professionnel, fluide, clair et naturel. "
+                    "Tu conserves le sens initial, sans ajouter d'information non présente."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Reformule ce texte pour une brochure de formation : "
+                            "Cette formation permet de voir plusieurs points pour apprendre à encadrer des séances de renforcement musculaire, "
+                            "avec une partie pratique, des conseils de posture et des idées d'exercices adaptables à différents publics."
+                        )
+                    }
+                ],
+                "max_tokens": 180,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "post_correction": False
             },
         },
+        "reformulation_technique_industrielle": {
+            "summary": "Reformulation d'un texte technique industriel",
+            "description": "Exemple de reformulation d'un contenu technique dans un style plus structuré et professionnel.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de reformulation professionnelle. "
+                    "Tu clarifies les formulations, améliores la fluidité et corriges les maladresses, "
+                    "sans modifier le fond technique."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Reformule ce texte : "
+                            "La formation sert à revoir les bases de maintenance de premier niveau sur des équipements industriels, "
+                            "avec de la prévention sécurité, des contrôles visuels et quelques manipulations simples pour éviter les pannes courantes."
+                        )
+                    }
+                ],
+                "max_tokens": 180,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "post_correction": False
+            },
+        },
+        "summary_safety_training": {
+            "summary": "Synthèse d'un texte de formation sécurité",
+            "description": "Résumer un texte de présentation en quelques phrases claires et exploitables.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de synthèse. "
+                    "Tu produis des résumés clairs, structurés et professionnels en français. "
+                    "Tu conserves uniquement les informations essentielles."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Résume ce texte en 3 phrases : "
+                            "Cette formation sensibilise les participants aux risques liés au travail en hauteur. "
+                            "Elle présente les règles de sécurité, les équipements de protection individuelle, "
+                            "les bonnes pratiques de vérification du matériel et les réflexes à adopter avant toute intervention. "
+                            "Des cas concrets et des mises en situation permettent de relier les apports théoriques à la réalité du terrain."
+                        )
+                    }
+                ],
+                "max_tokens": 140,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "post_correction": False
+            },
+        },
+        "content_enrichment_medico_social": {
+            "summary": "Enrichissement d'un intitulé de formation médico-sociale",
+            "description": "Développer un intitulé court en paragraphe réutilisable dans un catalogue.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de rédaction pour des catalogues de formation. "
+                    "Tu développes les intitulés en paragraphes professionnels, fluides, précis et directement réutilisables."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Développe cet intitulé sous la forme d'un paragraphe de présentation de formation : "
+                            "Prévenir l'épuisement professionnel dans les métiers de l'accompagnement"
+                        )
+                    }
+                ],
+                "max_tokens": 220,
+                "temperature": 0.3,
+                "top_p": 0.9,
+                "post_correction": False
+            },
+        },
+        "conversation_with_history_project_management": {
+            "summary": "Conversation avec historique",
+            "description": "Exemple de suivi de consigne dans un échange déjà commencé.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de rédaction professionnelle. "
+                    "Tu réponds en français clair, synthétique et réutilisable en contexte formation."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Résume ce texte en 4 phrases : "
+                            "Cette formation en gestion de projet permet aux participants de comprendre les grandes étapes de cadrage, "
+                            "de planification, de suivi et de clôture d'un projet. "
+                            "Elle aborde également la coordination des acteurs, le suivi des délais, "
+                            "la gestion des priorités et l'anticipation des risques."
+                        )
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "Cette formation présente les principales étapes de la gestion de projet, du cadrage à la clôture. "
+                            "Elle aide à structurer le suivi des délais, des priorités et des risques. "
+                            "Elle met également l'accent sur la coordination des acteurs impliqués. "
+                            "L'ensemble vise à renforcer la conduite opérationnelle des projets."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": "Fais maintenant une version plus concise en 2 phrases."
+                    }
+                ],
+                "max_tokens": 100,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "post_correction": False
+            },
+        },
+        "post_correction_custom_prompt": {
+            "summary": "Post-correction avec prompt personnalisé",
+            "description": "Exemple où la génération est suivie d'une correction linguistique pilotée par le client.",
+            "value": {
+                "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+                "system_prompt": (
+                    "Tu es un assistant de reformulation professionnelle. "
+                    "Réécris le texte dans un style clair et professionnel."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Reformule ce texte : "
+                            "Cette formation permet aux équipes techniques de mieux comprendre les bases du câblage réseau, "
+                            "les points de vigilance lors des installations et les erreurs fréquentes à éviter sur le terrain."
+                        )
+                    }
+                ],
+                "max_tokens": 180,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "post_correction": True,
+                "post_correction_prompt": (
+                    "Tu es un correcteur linguistique. "
+                    "Corrige l'orthographe, la grammaire et la syntaxe. "
+                    "Améliore légèrement la fluidité sans changer le sens, sans raccourcir fortement et sans ajouter d'information."
+                )
+            },
+        },
+    }
     ),
     x_api_key: str | None = Security(api_key_header),
 ):
@@ -325,7 +400,10 @@ async def chat(
     req_id = getattr(request.state, "request_id", None)
 
     client_messages = payload.model_dump(exclude_none=True).get("messages", [])
-    backend_messages = _build_backend_messages(client_messages)
+    backend_messages = _build_backend_messages(
+        client_messages,
+        system_prompt=payload.system_prompt,
+    )
 
     request_params_json = {
         k: v
@@ -334,6 +412,8 @@ async def chat(
             "temperature": payload.temperature,
             "top_p": payload.top_p,
             "post_correction": payload.post_correction,
+            "system_prompt": payload.system_prompt,
+            "post_correction_prompt": payload.post_correction_prompt,
         }.items()
         if v is not None
     }
@@ -409,7 +489,10 @@ async def chat(
         if payload.post_correction and final_content.strip():
             correction_payload = payload.model_dump(exclude_none=True)
             correction_payload.pop("post_correction", None)
-            correction_payload["messages"] = _build_post_correction_messages(final_content)
+            correction_payload["messages"] = _build_post_correction_messages(
+                final_content,
+                post_correction_prompt=payload.post_correction_prompt,
+            )
             correction_payload["max_tokens"] = max(payload.max_tokens, 256)
             correction_payload["temperature"] = 0.1
             correction_payload["top_p"] = 0.9

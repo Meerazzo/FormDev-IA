@@ -1,28 +1,11 @@
 """
 Pipeline d'analyse des réponses ouvertes de questionnaires de satisfaction.
-
-Ce service orchestre les différentes étapes du projet 3 :
-- normalisation de la réponse,
-- filtrage des cas non exploitables,
-- segmentation en points élémentaires,
-- classification de chaque point,
-- persistance des résultats en base,
-- journalisation des appels IA.
 """
 
+import json
 import time
 import uuid
-import json
 from typing import Any, Dict, List, Optional
-
-from db.models.survey_response import SurveyResponse
-from db.models.response_point import ResponsePoint
-from services.survey_preprocessor import SurveyPreprocessor
-from services.interaction_logger import (
-    log_ai_interaction_error,
-    log_ai_interaction_success,
-)
-from utils.json import parse_json_lenient
 
 from core.feature_config import (
     SURVEY_ANALYSIS_ALLOWED_CATEGORIES,
@@ -38,16 +21,17 @@ from core.feature_config import (
     SURVEY_ANALYSIS_TOP_P,
     build_survey_analysis_classification_system_prompt,
 )
+from db.models.response_point import ResponsePoint
+from db.models.survey_response import SurveyResponse
+from services.interaction_logger import (
+    log_ai_interaction_error,
+    log_ai_interaction_success,
+)
+from services.survey_preprocessor import SurveyPreprocessor
+from utils.json import parse_json_lenient
 
 
 class SurveyAnalyzerService:
-    """
-    Service métier principal du projet 3.
-
-    Il reçoit une réponse ouverte issue d'un questionnaire et retourne une
-    représentation structurée composée de points, chacun enrichi d'un sentiment
-    et d'une catégorie métier.
-    """
     PIPELINE_NAME = SURVEY_ANALYSIS_PIPELINE_NAME
     PIPELINE_VERSION = SURVEY_ANALYSIS_PIPELINE_VERSION
     PROMPT_VERSION = SURVEY_ANALYSIS_PROMPT_VERSION
@@ -91,7 +75,7 @@ class SurveyAnalyzerService:
         response_id: str,
         point_id: str,
         text: str,
-        sentiment: str,
+        sentiment: int,
         category: str,
         confidence: Optional[float],
     ) -> ResponsePoint:
@@ -113,7 +97,7 @@ class SurveyAnalyzerService:
         self,
         response_id: str,
         text: str,
-        sentiment: str,
+        sentiment: int,
         category: str,
     ) -> Dict[str, Any]:
         return {
@@ -138,7 +122,7 @@ class SurveyAnalyzerService:
         if not isinstance(points, list):
             return []
 
-        cleaned = []
+        cleaned: List[str] = []
         for point in points:
             if isinstance(point, str):
                 normalized = self._normalize_text(point)
@@ -147,15 +131,13 @@ class SurveyAnalyzerService:
         return cleaned
 
     def _normalize_classification_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        # Le modèle peut parfois retourner une catégorie hors taxonomie.
-        # On force alors un fallback contrôlé vers "unknown".
         category = result.get("category", "unknown")
         if category not in self.ALLOWED_CATEGORIES:
             category = "unknown"
 
-        sentiment = result.get("sentiment", "unknown")
-        if sentiment not in {"positive", "negative", "neutral", "unknown"}:
-            sentiment = "unknown"
+        sentiment = result.get("sentiment")
+        if sentiment not in {1, 2, 3, 4, 5}:
+            sentiment = 3
 
         return {
             "sentiment": sentiment,
@@ -173,26 +155,6 @@ class SurveyAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Analyse une réponse ouverte issue d'un questionnaire de satisfaction.
-
-        Étapes :
-        1. génération d'un identifiant technique unique pour la réponse,
-        2. normalisation du texte,
-        3. gestion des réponses vides ou non exploitables,
-        4. segmentation en points,
-        5. classification de chaque point,
-        6. stockage en base,
-        7. retour du résultat structuré.
-
-        Returns:
-            Un dictionnaire contenant :
-            - response_id
-            - points
-        """
-        # L'identifiant technique de réponse est généré côté backend
-        # afin d'éviter les collisions et de ne pas dépendre du client.
-
         response_id = str(uuid.uuid4())
 
         pre = self.preprocessor.preprocess(
@@ -310,15 +272,6 @@ class SurveyAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> List[str]:
-        """
-        Découpe une réponse libre en une liste de points élémentaires.
-
-        Le modèle doit retourner uniquement un JSON du type :
-        {"points": ["...", "..."]}
-
-        Returns:
-            Une liste de points textuels nettoyés.
-        """
         messages = [
             {
                 "role": "system",
@@ -338,8 +291,6 @@ class SurveyAnalyzerService:
         ]
 
         result = await self._call_model_json(
-            # Le logging ne doit jamais casser le pipeline principal.
-            # Toute erreur de log est donc volontairement absorbée.
             feature="survey_segmentation",
             messages=messages,
             max_tokens=SURVEY_ANALYSIS_SEGMENTATION_MAX_TOKENS,
@@ -366,15 +317,6 @@ class SurveyAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Attribue un sentiment et une catégorie à un point déjà segmenté.
-
-        Returns:
-            Un dictionnaire avec :
-            - sentiment
-            - category
-            - confidence
-        """
         messages = [
             {
                 "role": "system",
@@ -425,15 +367,6 @@ class SurveyAnalyzerService:
         client_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Appelle le modèle, tente de parser la sortie JSON et journalise l'interaction.
-
-        Cette méthode centralise :
-        - l'appel à vLLM,
-        - la mesure de latence,
-        - le parsing JSON,
-        - le logging de succès / erreur dans ai_interactions.
-        """
         t0 = time.perf_counter()
 
         try:

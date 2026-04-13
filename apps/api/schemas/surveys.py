@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+
 class SurveyAnalyzeRequest(BaseModel):
     survey_id: str = Field(
         ...,
@@ -33,6 +34,7 @@ class SurveyAnalyzeRequest(BaseModel):
         }],
     )
 
+
 class SurveyPoint(BaseModel):
     point_id: str = Field(
         ...,
@@ -44,10 +46,10 @@ class SurveyPoint(BaseModel):
         description="Texte du point segmenté.",
         examples=["Petit groupe, tout le monde peut prendre la parole."],
     )
-    sentiment: Optional[str] = Field(
+    sentiment: Optional[int] = Field(
         None,
-        description="Sentiment associé au point.",
-        examples=["positive"],
+        description="Sentiment sur 5 : 1 très négatif, 2 négatif, 3 neutre, 4 positif, 5 très positif.",
+        examples=[4],
     )
     category: Optional[str] = Field(
         None,
@@ -60,6 +62,7 @@ class SurveyPoint(BaseModel):
         examples=[0.92],
     )
 
+
 class SurveyAnalyzeResponse(BaseModel):
     response_id: str = Field(
         ...,
@@ -68,13 +71,18 @@ class SurveyAnalyzeResponse(BaseModel):
     )
     points: List[SurveyPoint] = Field(default_factory=list)
 
+
 class SurveyFeedbackPoint(BaseModel):
     point_id: Optional[str] = None
     is_correct: bool = False
     corrected_text: Optional[str] = None
-    corrected_sentiment: Optional[str] = None
+    corrected_sentiment: Optional[int] = Field(
+        default=None,
+        description="Sentiment corrigé sur 5 : 1 très négatif, 2 négatif, 3 neutre, 4 positif, 5 très positif.",
+    )
     corrected_category: Optional[str] = None
     action: Optional[str] = None  # update / delete / add
+
 
 class SurveyFeedbackRequest(BaseModel):
     response_id: str
@@ -108,7 +116,7 @@ class SurveyFormPreviewResponse(BaseModel):
 
 
 class SurveyFormAnalyzeItem(BaseModel):
-    question_id: str = Field(..., description="Identifiant de la question dans le formulaire.")
+    question_id: str = Field(..., description="Identifiant technique de la ligne ou de la question.")
     question_text: str = Field(..., description="Texte de la question.")
     response_text: Optional[str] = Field(None, description="Réponse associée à la question.")
 
@@ -133,7 +141,7 @@ class SurveyFormResponseItem(BaseModel):
     points: List[SurveyPoint] = Field(default_factory=list, description="Points extraits pour la réponse.")
 
 
-class SurveyFormAnalyzeResponse(BaseModel):
+class SurveyFormResult(BaseModel):
     survey_id: str = Field(..., description="Identifiant du formulaire traité.")
     question_decisions: List[SurveyQuestionSelection] = Field(
         default_factory=list,
@@ -142,4 +150,41 @@ class SurveyFormAnalyzeResponse(BaseModel):
     responses: List[SurveyFormResponseItem] = Field(
         default_factory=list,
         description="Résultats réponse par réponse après application de la sélection.",
+    )
+
+
+class SurveyProcessingCreateResponse(BaseModel):
+    processing_id: str = Field(
+        ...,
+        description="Identifiant unique du traitement à suivre côté client.",
+        examples=["8df0f6f5-3c73-4e84-9dd4-2c4c6d64c111"],
+    )
+    status: str = Field(
+        ...,
+        description="Statut initial du traitement.",
+        examples=["PENDING"],
+    )
+
+
+class SurveyProcessingStatusResponse(BaseModel):
+    processing_id: str = Field(
+        ...,
+        description="Identifiant unique du traitement.",
+    )
+    status: str = Field(
+        ...,
+        description="Statut courant : PENDING, STARTED, FINISHED ou FAILED.",
+        examples=["FINISHED"],
+    )
+    survey_id: Optional[str] = Field(
+        None,
+        description="Identifiant du formulaire associé au traitement.",
+    )
+    error_message: Optional[str] = Field(
+        None,
+        description="Message d'erreur si le traitement a échoué.",
+    )
+    result: Optional[SurveyFormResult] = Field(
+        None,
+        description="Résultat final du traitement si le statut est FINISHED.",
     )
