@@ -23,6 +23,7 @@ from core.feature_config import (
 )
 from db.models.response_point import ResponsePoint
 from db.models.survey_response import SurveyResponse
+from db.models.validated_response_point import ValidatedResponsePoint
 from services.interaction_logger import (
     log_ai_interaction_error,
     log_ai_interaction_success,
@@ -145,6 +146,27 @@ class SurveyAnalyzerService:
             "confidence": result.get("confidence"),
         }
 
+    def _build_validated_point_record(
+        self,
+        response_id: str,
+        point_id: Optional[str],
+        text: str,
+        sentiment: Optional[int],
+        category: Optional[str],
+        source: str = "model",
+        operator_id: Optional[str] = None,
+    ) -> ValidatedResponsePoint:
+        return ValidatedResponsePoint(
+            response_id=response_id,
+            point_id=point_id,
+            final_text=text,
+            final_sentiment=sentiment,
+            final_category=category,
+            source=source,
+            is_active="true",
+            operator_id=operator_id,
+        )
+
     async def analyze(
         self,
         survey_id: str,
@@ -213,6 +235,16 @@ class SurveyAnalyzerService:
                     confidence=point["confidence"],
                 )
             )
+            self.db.add(
+                self._build_validated_point_record(
+                    response_id=response_id,
+                    point_id=point["point_id"],
+                    text=point["text"],
+                    sentiment=point["sentiment"],
+                    category=point["category"],
+                    source="model",
+                )
+            )
             self._finalize_response(response)
             return result
 
@@ -257,6 +289,16 @@ class SurveyAnalyzerService:
                     sentiment=point["sentiment"],
                     category=point["category"],
                     confidence=point["confidence"],
+                )
+            )
+            self.db.add(
+                self._build_validated_point_record(
+                    response_id=response_id,
+                    point_id=point["point_id"],
+                    text=point["text"],
+                    sentiment=point["sentiment"],
+                    category=point["category"],
+                    source="model",
                 )
             )
 

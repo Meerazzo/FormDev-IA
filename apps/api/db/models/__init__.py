@@ -3,3 +3,4 @@ from db.models.survey_response import SurveyResponse
 from db.models.response_point import ResponsePoint
 from db.models.point_feedback import PointFeedback
 from db.models.survey_processing_job import SurveyProcessingJob
+from db.models.validated_response_point import ValidatedResponsePoint

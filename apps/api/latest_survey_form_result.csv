@@ -1,4 +1,2 @@
 survey_id;question_id;question_text;selection_decision;response_id;point_id;point_text;sentiment;category;confidence
-test_form_ignore_only_001;q1;Ce que je vais continuer;ignore;afdd2526-b597-41b8-8229-e722d54add75;;;;;
-test_form_ignore_only_001;q2;Ce que je vais commencer;ignore;8e735583-8ea4-4054-a6af-35f203a17996;;;;;
-test_form_ignore_only_001;q3;Ce que je vais changer / cesser;ignore;dec912d6-9887-458b-9d4f-fd05d7c0b268;;;;;
+string;string;string;ignore;4ca06be4-461a-4d08-a07d-de7a2111aef5;;;;;

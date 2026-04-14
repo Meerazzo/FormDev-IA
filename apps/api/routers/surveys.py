@@ -26,10 +26,13 @@ from schemas.surveys import (
     SurveyFormAnalyzeRequest,
     SurveyProcessingCreateResponse,
     SurveyProcessingStatusResponse,
+    SurveyFeedbackRequest,
+    SurveyFeedbackResponse,
 )
 from services.survey_analyzer import SurveyAnalyzerService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
 from services.survey_question_selector import SurveyQuestionSelectorService
+from services.survey_feedback import SurveyFeedbackService
 from services.vllm_client import VLLMClient
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -321,3 +324,50 @@ async def _run_form_processing_task(
         )
     finally:
         db.close()
+
+
+@router.post(
+    "/feedback",
+    response_model=SurveyFeedbackResponse,
+    summary="Enregistrer un feedback opérateur sur les points analysés",
+    description="""
+Enregistre la validation ou la correction opérateur d'une réponse analysée.
+
+Cette route permet de :
+- valider un point tel quel
+- corriger le texte d'un point
+- corriger son sentiment
+- corriger sa catégorie
+- supprimer métierement un point
+- ajouter un point manuel
+
+Le feedback est enregistré dans la table `point_feedback` sans modifier destructivement
+les données initiales issues du modèle.
+""",
+    responses={
+        200: {"description": "Feedback enregistré avec succès"},
+        401: {"description": "Clé API invalide ou absente"},
+        429: {"description": "Trop de requêtes"},
+        502: {"description": "Erreur interne"},
+    },
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def save_survey_feedback(
+    request: Request,
+    payload: SurveyFeedbackRequest,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+):
+    _, client_id = authenticate(api_key)
+
+    service = SurveyFeedbackService(db=db)
+
+    return service.save_feedback(
+        response_id=payload.response_id,
+        points=[point.model_dump() for point in payload.points],
+        operator_id=payload.operator_id,
+        metadata={
+            **(payload.metadata or {}),
+            "client_id": client_id,
+        },
+    )

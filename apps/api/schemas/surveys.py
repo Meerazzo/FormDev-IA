@@ -73,23 +73,36 @@ class SurveyAnalyzeResponse(BaseModel):
 
 
 class SurveyFeedbackPoint(BaseModel):
-    point_id: Optional[str] = None
-    is_correct: bool = False
-    corrected_text: Optional[str] = None
+    point_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant du point corrigé. Peut être absent pour un ajout manuel."
+    )
+    is_correct: bool = Field(
+        default=False,
+        description="Indique si le point proposé par le modèle est validé tel quel."
+    )
+    corrected_text: Optional[str] = Field(
+        default=None,
+        description="Texte corrigé par l'opérateur."
+    )
     corrected_sentiment: Optional[int] = Field(
         default=None,
         description="Sentiment corrigé sur 5 : 1 très négatif, 2 négatif, 3 neutre, 4 positif, 5 très positif.",
     )
-    corrected_category: Optional[str] = None
-    action: Optional[str] = None  # update / delete / add
-
+    corrected_category: Optional[str] = Field(
+        default=None,
+        description="Catégorie corrigée par l'opérateur."
+    )
+    action: Optional[str] = Field(
+        default=None,
+        description='Action opérateur : "update", "delete" ou "add".'
+    )
 
 class SurveyFeedbackRequest(BaseModel):
-    response_id: str
-    operator_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    points: List[SurveyFeedbackPoint]
-
+    response_id: str = Field(..., description="Identifiant de la réponse concernée par le feedback.")
+    operator_id: Optional[str] = Field(default=None, description="Identifiant de l'opérateur ayant relu la réponse.")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Métadonnées de la session de relecture.")
+    points: List[SurveyFeedbackPoint] = Field(..., description="Liste des validations ou corrections opérateur.")
 
 class SurveyFormItem(BaseModel):
     question_id: str = Field(..., description="Identifiant de la question dans le formulaire.")
@@ -187,4 +200,20 @@ class SurveyProcessingStatusResponse(BaseModel):
     result: Optional[SurveyFormResult] = Field(
         None,
         description="Résultat final du traitement si le statut est FINISHED.",
+    )
+
+class SurveyFeedbackResponse(BaseModel):
+    response_id: str = Field(
+        ...,
+        description="Identifiant de la réponse concernée par le feedback.",
+    )
+    saved_feedback_count: int = Field(
+        ...,
+        description="Nombre de lignes de feedback enregistrées.",
+        examples=[3],
+    )
+    status: str = Field(
+        ...,
+        description="Statut de l'enregistrement du feedback.",
+        examples=["ok"],
     )

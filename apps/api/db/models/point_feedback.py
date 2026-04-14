@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Text, Index
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, Text, Index
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -21,8 +21,12 @@ class PointFeedback(Base):
 
     is_correct = Column(Boolean, nullable=False, default=False)
 
+    original_text = Column(Text, nullable=True)
+    original_sentiment = Column(Integer, nullable=True)
+    original_category = Column(Text, nullable=True)
+
     corrected_text = Column(Text, nullable=True)
-    corrected_sentiment = Column(Text, nullable=True)
+    corrected_sentiment = Column(Integer, nullable=True)
     corrected_category = Column(Text, nullable=True)
 
     action = Column(Text, nullable=True)  # update / delete / add
