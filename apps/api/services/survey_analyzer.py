@@ -5,8 +5,11 @@ Pipeline d'analyse des réponses ouvertes de questionnaires de satisfaction.
 import json
 import time
 import uuid
+import logging
 from typing import Any, Dict, List, Optional
+from core.config import settings
 
+logger = logging.getLogger(__name__)
 from core.feature_config import (
     SURVEY_ANALYSIS_ALLOWED_CATEGORIES,
     SURVEY_ANALYSIS_CLASSIFICATION_MAX_TOKENS,
@@ -29,6 +32,7 @@ from services.interaction_logger import (
     log_ai_interaction_success,
 )
 from services.survey_preprocessor import SurveyPreprocessor
+from services.survey_example_memory import SurveyExampleMemoryService
 from utils.json import parse_json_lenient
 
 
@@ -42,6 +46,12 @@ class SurveyAnalyzerService:
         self.preprocessor = SurveyPreprocessor()
         self.vllm_client = vllm_client
         self.db = db
+        self.example_memory = SurveyExampleMemoryService(
+            qdrant_url=settings.QDRANT_URL,
+            collection_name=settings.QDRANT_COLLECTION,
+            embedding_model=settings.QDRANT_EMBEDDING_MODEL,
+            vector_size=settings.QDRANT_VECTOR_SIZE,
+        )
 
     def _normalize_text(self, text: Optional[str]) -> str:
         if not text:
@@ -167,6 +177,36 @@ class SurveyAnalyzerService:
             operator_id=operator_id,
         )
 
+    def _get_few_shot_examples(
+        self,
+        question_text: str,
+        point_text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        limit: int = 3,
+    ) -> List[Dict[str, Any]]:
+        client_id = (metadata or {}).get("client_id")
+        if not client_id:
+            return []
+
+        try:
+            return self.example_memory.search_similar_examples(
+                client_id=client_id,
+                question_text=question_text,
+                input_point_text=point_text,
+                allowed_categories=self.ALLOWED_CATEGORIES,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.warning(
+                "Qdrant few-shot retrieval failed "
+                "(client_id=%s, question_text=%s, point_text=%s): %s",
+                client_id,
+                question_text,
+                point_text,
+                str(e),
+            )
+            return []
+        
     async def analyze(
         self,
         survey_id: str,
@@ -359,10 +399,20 @@ class SurveyAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        few_shot_examples = self._get_few_shot_examples(
+            question_text=question_text,
+            point_text=point_text,
+            metadata=metadata,
+            limit=3,
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": build_survey_analysis_classification_system_prompt(self.ALLOWED_CATEGORIES),
+                "content": build_survey_analysis_classification_system_prompt(
+                    self.ALLOWED_CATEGORIES,
+                    few_shot_examples=few_shot_examples,
+                ),
             },
             {
                 "role": "user",

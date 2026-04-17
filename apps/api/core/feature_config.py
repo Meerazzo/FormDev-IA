@@ -6,8 +6,8 @@ de comportement pour les différentes routes applicatives :
 - chat / génération de texte
 - analyse de questionnaires
 """
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from typing import Dict, List, Set, Tuple
 
 # ============================================================
 # export CSV dev du dernier traitement formulaire
@@ -155,10 +155,12 @@ Ne retourne rien d'autre que ce JSON.
 """.strip()
 
 
-def build_survey_analysis_classification_system_prompt(categories: List[str]) -> str:
-    return (
+def build_survey_analysis_classification_system_prompt(
+    categories: List[str],
+    few_shot_examples: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    prompt = (
         "Tu analyses un point issu d'un questionnaire de satisfaction de formation.\n\n"
-
         "Objectifs :\n"
         "- attribuer un score de sentiment sur une échelle de 1 à 5\n"
         "- associer une catégorie pertinente\n\n"
@@ -191,12 +193,27 @@ def build_survey_analysis_classification_system_prompt(categories: List[str]) ->
         "- choisis la catégorie la plus pertinente\n"
         "- si aucune catégorie ne correspond clairement → 'autre' ou 'unknown'\n"
         "- n'invente jamais de catégorie hors liste\n\n"
+    )
 
+    if few_shot_examples:
+        prompt += "Exemples validés pour ce même client :\n\n"
+        for idx, ex in enumerate(few_shot_examples, start=1):
+            prompt += (
+                f"Exemple {idx}\n"
+                f"Question : {ex.get('question_text')}\n"
+                f"Point : {ex.get('input_point_text')}\n"
+                f"Sortie attendue : "
+                f'{{"sentiment": {ex.get("final_sentiment")}, "category": "{ex.get("final_category")}", "confidence": null}}\n\n'
+            )
+
+    prompt += (
         "Format de sortie strict :\n"
         '{"sentiment": 1|2|3|4|5, "category": "...", "confidence": null}\n\n'
-
         "Ne retourne rien d'autre que ce JSON."
     )
+
+    return prompt
+
 
 # ============================================================
 # SÉLECTION DES QUESTIONS DE FORMULAIRE

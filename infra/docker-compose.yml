@@ -40,6 +40,15 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
   api:
     build:
       context: ..
@@ -49,6 +58,10 @@ services:
       - API_KEYS=${API_KEYS}
       - RATE_LIMIT_RPM=${RATE_LIMIT_RPM}
       - DATABASE_URL=${DATABASE_URL}
+      - QDRANT_URL=${QDRANT_URL}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
+      - QDRANT_EMBEDDING_MODEL=${QDRANT_EMBEDDING_MODEL}
+      - QDRANT_VECTOR_SIZE=${QDRANT_VECTOR_SIZE}
     ports:
       - "${API_PORT}:8080"
     depends_on:
@@ -56,9 +69,12 @@ services:
         condition: service_healthy
       inference:
         condition: service_started
+      qdrant:
+        condition: service_started
     volumes:
       - ../apps/api:/app
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  qdrant_storage:

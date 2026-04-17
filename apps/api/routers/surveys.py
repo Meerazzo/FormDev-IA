@@ -366,8 +366,5 @@ async def save_survey_feedback(
         response_id=payload.response_id,
         points=[point.model_dump() for point in payload.points],
         operator_id=payload.operator_id,
-        metadata={
-            **(payload.metadata or {}),
-            "client_id": client_id,
-        },
+        metadata=payload.metadata,
     )
