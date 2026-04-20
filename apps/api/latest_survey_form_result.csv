@@ -1,2 +1,0 @@
-survey_id;question_id;question_text;selection_decision;response_id;point_id;point_text;sentiment;category;confidence
-string;string;string;ignore;4ca06be4-461a-4d08-a07d-de7a2111aef5;;;;;

@@ -14,7 +14,6 @@ from core.feature_config import (
 from db.models.survey_processing_job import SurveyProcessingJob
 from services.survey_analyzer import SurveyAnalyzerService
 from services.survey_question_selector import SurveyQuestionSelectorService
-from utils.dev_csv_export import export_latest_form_result_to_csv
 
 
 class SurveyFormAnalyzerService:
@@ -41,8 +40,11 @@ class SurveyFormAnalyzerService:
                 )
 
     @staticmethod
-    def _build_question_decision_map(question_decisions: List[Dict[str, str]]) -> Dict[str, str]:
+    def _build_question_decision_map(
+        question_decisions: List[Dict[str, str]],
+    ) -> Dict[str, str]:
         mapping: Dict[str, str] = {}
+
         for item in question_decisions:
             question_text = " ".join((item.get("question_text") or "").strip().split())
             decision = (item.get("decision") or "").strip().lower()
@@ -89,12 +91,18 @@ class SurveyFormAnalyzerService:
         self.db.refresh(job)
         return job
 
-    def get_processing_job(self, processing_id: str, client_id: Optional[str] = None) -> Optional[SurveyProcessingJob]:
+    def get_processing_job(
+        self,
+        processing_id: str,
+        client_id: Optional[str] = None,
+    ) -> Optional[SurveyProcessingJob]:
         query = self.db.query(SurveyProcessingJob).filter(
             SurveyProcessingJob.processing_id == processing_id
         )
+
         if client_id is not None:
             query = query.filter(SurveyProcessingJob.client_id == client_id)
+
         return query.first()
 
     async def run_processing_job(
@@ -102,9 +110,11 @@ class SurveyFormAnalyzerService:
         processing_id: str,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        job = self.db.query(SurveyProcessingJob).filter(
-            SurveyProcessingJob.processing_id == processing_id
-        ).first()
+        job = (
+            self.db.query(SurveyProcessingJob)
+            .filter(SurveyProcessingJob.processing_id == processing_id)
+            .first()
+        )
 
         if not job:
             raise ValueError(f"Processing job not found: {processing_id}")
@@ -134,11 +144,6 @@ class SurveyFormAnalyzerService:
             job.error_message = None
             self.db.commit()
 
-            try:
-                export_latest_form_result_to_csv(result)
-            except Exception:
-                pass
-
             return result
 
         except Exception as e:
@@ -157,7 +162,9 @@ class SurveyFormAnalyzerService:
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         distinct_questions = self.question_selector.extract_distinct_questions(items)
-        selection_result = await self.question_selector.select_questions_in_chunks(distinct_questions)
+        selection_result = await self.question_selector.select_questions_in_chunks(
+            distinct_questions
+        )
 
         question_decisions = selection_result.get("questions", [])
         decision_map = self._build_question_decision_map(question_decisions)
@@ -189,6 +196,7 @@ class SurveyFormAnalyzerService:
                     metadata=item_metadata,
                     request_id=request_id,
                     client_id=client_id,
+                    source_endpoint="/surveys/forms/analyze",
                 )
 
                 response_results.append(
@@ -213,6 +221,7 @@ class SurveyFormAnalyzerService:
                     },
                     request_id=request_id,
                     client_id=client_id,
+                    source_endpoint="/surveys/forms/analyze",
                 )
 
                 response_results.append(

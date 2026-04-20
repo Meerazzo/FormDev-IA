@@ -1,41 +1,13 @@
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class SurveyAnalyzeRequest(BaseModel):
-    survey_id: str = Field(
-        ...,
-        description="Identifiant du questionnaire ou de la session de formation.",
-        examples=["formation_word_mars_2026"],
-    )
-    question_id: str = Field(
-        ...,
-        description="Identifiant de la question dans le questionnaire.",
-        examples=["q_appreciation"],
-    )
-    question_text: str = Field(
-        ...,
-        description="Texte de la question posée à l'utilisateur.",
-        examples=["Ce que vous avez particulièrement apprécié :"],
-    )
-    response_text: Optional[str] = Field(
-        None,
-        description="Réponse textuelle libre fournie par le participant.",
-        examples=["Petit groupe, tout le monde peut prendre la parole. Changement d'intervenant stimulant."],
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Contexte additionnel : client, formation, date, etc.",
-        examples=[{
-            "formation": "Word avancé",
-            "client": "Entreprise X",
-            "formateur": "Dupont",
-            "date": "2026-03-30"
-        }],
-    )
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class SurveyPoint(BaseModel):
+class SurveyPoint(StrictModel):
     point_id: str = Field(
         ...,
         description="Identifiant technique du point extrait.",
@@ -63,27 +35,18 @@ class SurveyPoint(BaseModel):
     )
 
 
-class SurveyAnalyzeResponse(BaseModel):
-    response_id: str = Field(
-        ...,
-        description="Identifiant technique unique généré côté backend pour la réponse analysée.",
-        examples=["550e8400-e29b-41d4-a716-446655440000"],
-    )
-    points: List[SurveyPoint] = Field(default_factory=list)
-
-
-class SurveyFeedbackPoint(BaseModel):
+class SurveyFeedbackPoint(StrictModel):
     point_id: Optional[str] = Field(
         default=None,
-        description="Identifiant du point corrigé. Peut être absent pour un ajout manuel."
+        description="Identifiant du point concerné. Absent pour un ajout manuel.",
     )
     is_correct: bool = Field(
         default=False,
-        description="Indique si le point proposé par le modèle est validé tel quel."
+        description="Indique si le point proposé par le modèle est validé tel quel.",
     )
     corrected_text: Optional[str] = Field(
         default=None,
-        description="Texte corrigé par l'opérateur."
+        description="Texte corrigé par l'opérateur.",
     )
     corrected_sentiment: Optional[int] = Field(
         default=None,
@@ -91,70 +54,94 @@ class SurveyFeedbackPoint(BaseModel):
     )
     corrected_category: Optional[str] = Field(
         default=None,
-        description="Catégorie corrigée par l'opérateur."
+        description="Catégorie corrigée par l'opérateur.",
     )
-    action: Optional[str] = Field(
+    action: Optional[Literal["update", "delete", "add"]] = Field(
         default=None,
-        description='Action opérateur : "update", "delete" ou "add".'
-    )
-
-class SurveyFeedbackRequest(BaseModel):
-    response_id: str = Field(..., description="Identifiant de la réponse concernée par le feedback.")
-    operator_id: Optional[str] = Field(default=None, description="Identifiant de l'opérateur ayant relu la réponse.")
-    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Métadonnées de la session de relecture.")
-    points: List[SurveyFeedbackPoint] = Field(..., description="Liste des validations ou corrections opérateur.")
-
-class SurveyFormItem(BaseModel):
-    question_id: str = Field(..., description="Identifiant de la question dans le formulaire.")
-    question_text: str = Field(..., description="Texte de la question.")
-    response_text: Optional[str] = Field(None, description="Réponse associée à la question.")
-
-
-class SurveyFormPreviewRequest(BaseModel):
-    form_id: Optional[str] = Field(None, description="Identifiant du formulaire.")
-    items: List[SurveyFormItem] = Field(..., description="Liste des questions/réponses du formulaire.")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Métadonnées du formulaire.")
-
-
-class SurveyQuestionSelection(BaseModel):
-    question_text: str = Field(..., description="Texte exact de la question.")
-    decision: str = Field(..., description='Décision proposée : "analyze" ou "ignore".')
-
-
-class SurveyFormPreviewResponse(BaseModel):
-    questions: List[SurveyQuestionSelection] = Field(
-        default_factory=list,
-        description="Liste des questions distinctes du formulaire avec décision proposée.",
+        description='Action opérateur : "update", "delete" ou "add".',
     )
 
 
-class SurveyFormAnalyzeItem(BaseModel):
-    question_id: str = Field(..., description="Identifiant technique de la ligne ou de la question.")
+class SurveyFeedbackRequest(StrictModel):
+    response_id: str = Field(
+        ...,
+        description="Identifiant de la réponse concernée par le feedback.",
+    )
+    operator_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant de l'opérateur ayant relu la réponse.",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Métadonnées métier de la session de relecture.",
+    )
+    points: List[SurveyFeedbackPoint] = Field(
+        ...,
+        description="Liste des validations ou corrections opérateur.",
+    )
+
+
+class SurveyFeedbackResponse(StrictModel):
+    response_id: str = Field(
+        ...,
+        description="Identifiant de la réponse concernée par le feedback.",
+    )
+    saved_feedback_count: int = Field(
+        ...,
+        description="Nombre de lignes de feedback enregistrées.",
+        examples=[3],
+    )
+    status: str = Field(
+        ...,
+        description="Statut de l'enregistrement du feedback.",
+        examples=["ok"],
+    )
+
+
+class SurveyFormItem(StrictModel):
+    question_id: str = Field(..., description="Identifiant technique de la question.")
     question_text: str = Field(..., description="Texte de la question.")
-    response_text: Optional[str] = Field(None, description="Réponse associée à la question.")
+    response_text: Optional[str] = Field(
+        None,
+        description="Réponse associée à la question.",
+    )
 
 
-class SurveyFormAnalyzeRequest(BaseModel):
+class SurveyFormAnalyzeRequest(StrictModel):
     survey_id: str = Field(..., description="Identifiant du formulaire ou de la session.")
-    items: List[SurveyFormAnalyzeItem] = Field(
+    items: List[SurveyFormItem] = Field(
         ...,
         description="Liste des couples question/réponse du formulaire.",
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description="Métadonnées communes au formulaire : client, formation, date, etc.",
+        description="Métadonnées communes au formulaire : client, formation, date, taxonomy_id, etc.",
     )
 
 
-class SurveyFormResponseItem(BaseModel):
+class SurveyQuestionSelection(StrictModel):
+    question_text: str = Field(..., description="Texte exact de la question.")
+    decision: Literal["analyze", "ignore"] = Field(
+        ...,
+        description='Décision proposée : "analyze" ou "ignore".',
+    )
+
+
+class SurveyFormResponseItem(StrictModel):
     response_id: str = Field(..., description="Identifiant technique unique de la réponse.")
     question_id: str = Field(..., description="Identifiant de la question.")
     question_text: str = Field(..., description="Texte de la question.")
-    selection_decision: str = Field(..., description='Décision prise pour la question : "analyze" ou "ignore".')
-    points: List[SurveyPoint] = Field(default_factory=list, description="Points extraits pour la réponse.")
+    selection_decision: Literal["analyze", "ignore"] = Field(
+        ...,
+        description='Décision prise pour la question : "analyze" ou "ignore".',
+    )
+    points: List[SurveyPoint] = Field(
+        default_factory=list,
+        description="Points extraits pour la réponse.",
+    )
 
 
-class SurveyFormResult(BaseModel):
+class SurveyFormResult(StrictModel):
     survey_id: str = Field(..., description="Identifiant du formulaire traité.")
     question_decisions: List[SurveyQuestionSelection] = Field(
         default_factory=list,
@@ -166,7 +153,7 @@ class SurveyFormResult(BaseModel):
     )
 
 
-class SurveyProcessingCreateResponse(BaseModel):
+class SurveyProcessingCreateResponse(StrictModel):
     processing_id: str = Field(
         ...,
         description="Identifiant unique du traitement à suivre côté client.",
@@ -179,7 +166,7 @@ class SurveyProcessingCreateResponse(BaseModel):
     )
 
 
-class SurveyProcessingStatusResponse(BaseModel):
+class SurveyProcessingStatusResponse(StrictModel):
     processing_id: str = Field(
         ...,
         description="Identifiant unique du traitement.",
@@ -200,20 +187,4 @@ class SurveyProcessingStatusResponse(BaseModel):
     result: Optional[SurveyFormResult] = Field(
         None,
         description="Résultat final du traitement si le statut est FINISHED.",
-    )
-
-class SurveyFeedbackResponse(BaseModel):
-    response_id: str = Field(
-        ...,
-        description="Identifiant de la réponse concernée par le feedback.",
-    )
-    saved_feedback_count: int = Field(
-        ...,
-        description="Nombre de lignes de feedback enregistrées.",
-        examples=[3],
-    )
-    status: str = Field(
-        ...,
-        description="Statut de l'enregistrement du feedback.",
-        examples=["ok"],
     )

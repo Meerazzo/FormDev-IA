@@ -6,15 +6,10 @@ de comportement pour les différentes routes applicatives :
 - chat / génération de texte
 - analyse de questionnaires
 """
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
-# ============================================================
-# export CSV dev du dernier traitement formulaire
-# ============================================================
-
-SURVEY_FORM_EXPORT_LAST_CSV = True
-SURVEY_FORM_LAST_CSV_PATH = "/app/latest_survey_form_result.csv"
 # ============================================================
 # CHAT / PROJET 2
 # ============================================================
@@ -70,6 +65,7 @@ Tu peux reformuler légèrement une phrase si cela améliore clairement la quali
 Réponds uniquement avec le texte corrigé.
 """.strip()
 
+
 # ============================================================
 # ANALYSE DES QUESTIONNAIRES / PROJET 3
 # ============================================================
@@ -81,8 +77,6 @@ SURVEY_ANALYSIS_PIPELINE_VERSION = "v1"
 SURVEY_ANALYSIS_PROMPT_VERSION = "v1"
 
 
-# Taxonomie métier actuelle fournie par le client.
-# Cette liste est amenée à évoluer.
 SURVEY_ANALYSIS_ALLOWED_CATEGORIES: List[str] = [
     "administratif",
     "pedagogie",
@@ -164,16 +158,13 @@ def build_survey_analysis_classification_system_prompt(
         "Objectifs :\n"
         "- attribuer un score de sentiment sur une échelle de 1 à 5\n"
         "- associer une catégorie pertinente\n\n"
-
         "Échelle de sentiment :\n"
         "1 = très négatif (problème important, critique forte)\n"
         "2 = négatif (point d'amélioration clair)\n"
         "3 = neutre ou mitigé\n"
         "4 = positif\n"
         "5 = très positif (satisfaction forte, enthousiasme)\n\n"
-
         f"Catégories possibles uniquement : {categories}.\n\n"
-
         "Règles d'interprétation :\n"
         "- base-toi sur le texte ET sur le type de question\n"
         "- une réponse à une question de type 'points d'amélioration' est généralement négative\n"
@@ -183,12 +174,10 @@ def build_survey_analysis_classification_system_prompt(
         "- une remarque descriptive sans jugement clair → score 3\n"
         "- une satisfaction claire → score 4\n"
         "- une satisfaction forte ou enthousiaste → score 5\n\n"
-
         "Important :\n"
         "- évite d'utiliser 3 par défaut\n"
         "- n'utilise 3 que si le sentiment est réellement neutre ou ambigu\n"
         "- privilégie 2 ou 4 dès qu'une orientation est identifiable\n\n"
-
         "Catégorisation :\n"
         "- choisis la catégorie la plus pertinente\n"
         "- si aucune catégorie ne correspond clairement → 'autre' ou 'unknown'\n"
@@ -265,8 +254,9 @@ Règles importantes :
 - ne justifie pas ta réponse
 """.strip()
 
+
 # ============================================================
-# gestion des donnes du formulaire ( tailles des lots et garde fous)
+# GARDE-FOUS PAYLOAD FORMULAIRE
 # ============================================================
 
 SURVEY_FORM_MAX_ITEMS = 200

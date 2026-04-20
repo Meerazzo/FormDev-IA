@@ -8,27 +8,25 @@ Cela permet de modifier facilement la configuration selon
 l'environnement (dev, staging, production) sans changer le code.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
     Paramètres de configuration utilisés dans l'application.
-
-    VLLM_BASE_URL : adresse du serveur d'inférence vLLM
-    RATE_LIMIT_RPM : limite de requêtes par minute
-    API_KEYS : liste des clés API autorisées
-    LOG_LEVEL : niveau de logs (INFO, DEBUG, etc.)
-    DATABASE_URL : URL de connexion PostgreSQL
-    QDRANT_URL : URL du serveur Qdrant
-    QDRANT_COLLECTION : nom de la collection d'exemples
-    QDRANT_EMBEDDING_MODEL : modèle d'embedding utilisé pour les exemples
-    QDRANT_VECTOR_SIZE : taille des vecteurs générés
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     VLLM_BASE_URL: str = "http://localhost:8000"
     RATE_LIMIT_RPM: int = 30
     API_KEYS: str = ""
     LOG_LEVEL: str = "INFO"
+
     DATABASE_URL: str
 
     QDRANT_URL: str = "http://localhost:6333"

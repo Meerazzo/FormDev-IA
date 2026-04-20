@@ -41,32 +41,22 @@ def create_app() -> FastAPI:
     """
     setup_logging()
     app = FastAPI(
-    title="FormDev IA - Gateway",
+    title="FormDev IA API",
+    version="1.0.0",
     description="""
-    API gateway pour les services d'intelligence artificielle de FormDev.
+    API d'inférence et d'analyse de questionnaires pour FormDev.
 
-    Cette API permet aujourd'hui deux grands usages :
+    Fonctionnalités principales :
+    - génération / reformulation de texte via `/v1/chat`
+    - analyse asynchrone de formulaires de satisfaction via `/surveys/forms/analyze`
+    - suivi de traitement via `/surveys/processings/{processing_id}`
+    - validation opérateur et apprentissage progressif via `/surveys/feedback`
 
-    ### 1. Génération / transformation de texte via `/v1/chat`
-    - reformulation
-    - synthèse
-    - enrichissement de contenu
-    - génération encadrée en français professionnel et pédagogique
-
-    ### 2. Analyse de questionnaires via `/surveys/analyze`
-    - segmentation d'une réponse ouverte en plusieurs points
-    - classification par sentiment
-    - catégorisation métier
-    - stockage des résultats en base de données
-
-    ### Sécurité
-    Les routes exposées sont protégées par clé API et soumises au rate limiting.
-
-    ### Principe général
-    L'application agit comme une gateway entre les clients FormDev,
-    le serveur d'inférence vLLM et la base PostgreSQL de journalisation / stockage métier.
+    L'API s'appuie sur :
+    - vLLM pour l'inférence LLM
+    - PostgreSQL pour le stockage métier
+    - Qdrant pour la mémoire vectorielle des exemples validés
     """,
-        version="1.0",
     )
 
 

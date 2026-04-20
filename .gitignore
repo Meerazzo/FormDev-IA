@@ -1,17 +1,23 @@
-infra/.env
-.env
-
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
-*.pyd
 
+# Environnements
 .venv/
 venv/
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
 
+# Secrets / env
+.env
+infra/.env
+
+# Logs
 *.log
+
 .DS_Store
+# Données / exports temporaires
+*.csv
+!docs/*.csv
+
+# Bench / résultats temporaires
+bench/results/

@@ -1,12 +1,14 @@
-fastapi==0.115.8
-uvicorn[standard]==0.34.0
-httpx==0.27.2
-slowapi==0.1.9
-python-dotenv==1.0.1
-pydantic-settings==2.7.1
-sqlalchemy==2.0.38
-psycopg2-binary==2.9.10
-alembic==1.14.1
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
 
-qdrant-client
-fastembed
+pydantic==2.11.3
+pydantic-settings==2.8.1
+
+httpx==0.28.1
+slowapi==0.1.9
+
+sqlalchemy==2.0.40
+psycopg2-binary==2.9.10
+alembic==1.15.2
+
+qdrant-client[fastembed]==1.14.2

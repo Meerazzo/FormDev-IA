@@ -3,13 +3,12 @@ Pipeline d'analyse des réponses ouvertes de questionnaires de satisfaction.
 """
 
 import json
+import logging
 import time
 import uuid
-import logging
 from typing import Any, Dict, List, Optional
-from core.config import settings
 
-logger = logging.getLogger(__name__)
+from core.config import settings
 from core.feature_config import (
     SURVEY_ANALYSIS_ALLOWED_CATEGORIES,
     SURVEY_ANALYSIS_CLASSIFICATION_MAX_TOKENS,
@@ -31,9 +30,11 @@ from services.interaction_logger import (
     log_ai_interaction_error,
     log_ai_interaction_success,
 )
-from services.survey_preprocessor import SurveyPreprocessor
 from services.survey_example_memory import SurveyExampleMemoryService
+from services.survey_preprocessor import SurveyPreprocessor
 from utils.json import parse_json_lenient
+
+logger = logging.getLogger(__name__)
 
 
 class SurveyAnalyzerService:
@@ -104,6 +105,27 @@ class SurveyAnalyzerService:
             prompt_version=self.PROMPT_VERSION,
         )
 
+    def _build_validated_point_record(
+        self,
+        response_id: str,
+        point_id: Optional[str],
+        text: str,
+        sentiment: Optional[int],
+        category: Optional[str],
+        source: str = "model",
+        operator_id: Optional[str] = None,
+    ) -> ValidatedResponsePoint:
+        return ValidatedResponsePoint(
+            response_id=response_id,
+            point_id=point_id,
+            final_text=text,
+            final_sentiment=sentiment,
+            final_category=category,
+            source=source,
+            is_active="true",
+            operator_id=operator_id,
+        )
+
     def _build_short_opinion_result(
         self,
         response_id: str,
@@ -123,6 +145,38 @@ class SurveyAnalyzerService:
                 }
             ],
         }
+
+    def _save_point(
+        self,
+        response_id: str,
+        point: Dict[str, Any],
+    ) -> None:
+        """
+        Persiste un point dans les deux tables :
+        - response_points : sortie brute modèle
+        - validated_response_points : version finale initiale
+        """
+        self.db.add(
+            self._build_point_record(
+                response_id=response_id,
+                point_id=point["point_id"],
+                text=point["text"],
+                sentiment=point["sentiment"],
+                category=point["category"],
+                confidence=point["confidence"],
+            )
+        )
+
+        self.db.add(
+            self._build_validated_point_record(
+                response_id=response_id,
+                point_id=point["point_id"],
+                text=point["text"],
+                sentiment=point["sentiment"],
+                category=point["category"],
+                source="model",
+            )
+        )
 
     def _finalize_response(self, response: SurveyResponse) -> None:
         response.status = "processed"
@@ -156,27 +210,6 @@ class SurveyAnalyzerService:
             "confidence": result.get("confidence"),
         }
 
-    def _build_validated_point_record(
-        self,
-        response_id: str,
-        point_id: Optional[str],
-        text: str,
-        sentiment: Optional[int],
-        category: Optional[str],
-        source: str = "model",
-        operator_id: Optional[str] = None,
-    ) -> ValidatedResponsePoint:
-        return ValidatedResponsePoint(
-            response_id=response_id,
-            point_id=point_id,
-            final_text=text,
-            final_sentiment=sentiment,
-            final_category=category,
-            source=source,
-            is_active="true",
-            operator_id=operator_id,
-        )
-
     def _get_few_shot_examples(
         self,
         question_text: str,
@@ -189,13 +222,34 @@ class SurveyAnalyzerService:
             return []
 
         try:
-            return self.example_memory.search_similar_examples(
+            raw_examples = self.example_memory.search_similar_examples(
                 client_id=client_id,
                 question_text=question_text,
                 input_point_text=point_text,
                 allowed_categories=self.ALLOWED_CATEGORIES,
-                limit=limit,
+                limit=max(limit * 3, 10),
             )
+
+            deduplicated: List[Dict[str, Any]] = []
+            seen: set[tuple] = set()
+
+            for ex in raw_examples:
+                key = (
+                    ex.get("question_text"),
+                    ex.get("input_point_text"),
+                    ex.get("final_category"),
+                    ex.get("final_sentiment"),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduplicated.append(ex)
+
+                if len(deduplicated) >= limit:
+                    break
+
+            return deduplicated
+
         except Exception as e:
             logger.warning(
                 "Qdrant few-shot retrieval failed "
@@ -216,9 +270,19 @@ class SurveyAnalyzerService:
         metadata: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
+        source_endpoint: str = "/surveys/forms/analyze",
     ) -> Dict[str, Any]:
+        """
+        Analyse une réponse unitaire :
+        - preprocessing
+        - sortie anticipée si non pertinente
+        - segmentation
+        - classification
+        - persistance
+        """
         response_id = str(uuid.uuid4())
 
+        # 1. Preprocessing
         pre = self.preprocessor.preprocess(
             question_text=question_text,
             response_text=response_text,
@@ -244,50 +308,25 @@ class SurveyAnalyzerService:
         self.db.add(response)
         self.db.flush()
 
-        forced_ignore = bool((metadata or {}).get("force_ignore"))
-        if forced_ignore:
+        # 2. Sorties anticipées
+        if bool((metadata or {}).get("force_ignore")) or not pre["should_analyze"]:
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
-        if not pre["should_analyze"]:
-            self._finalize_response(response)
-            return {"response_id": response_id, "points": []}
-
+        # 3. Cas simple : opinion courte
         if pre["response_kind"] == "short_simple_opinion" and pre["short_opinion"]:
-            sentiment = pre["short_opinion"]["sentiment"]
-            category = pre["short_opinion"]["category"]
-
             result = self._build_short_opinion_result(
                 response_id=response_id,
                 text=normalized_response_text,
-                sentiment=sentiment,
-                category=category,
+                sentiment=pre["short_opinion"]["sentiment"],
+                category=pre["short_opinion"]["category"],
             )
-            point = result["points"][0]
 
-            self.db.add(
-                self._build_point_record(
-                    response_id=response_id,
-                    point_id=point["point_id"],
-                    text=point["text"],
-                    sentiment=point["sentiment"],
-                    category=point["category"],
-                    confidence=point["confidence"],
-                )
-            )
-            self.db.add(
-                self._build_validated_point_record(
-                    response_id=response_id,
-                    point_id=point["point_id"],
-                    text=point["text"],
-                    sentiment=point["sentiment"],
-                    category=point["category"],
-                    source="model",
-                )
-            )
+            self._save_point(response_id, result["points"][0])
             self._finalize_response(response)
             return result
 
+        # 4. Segmentation
         segmented_points = await self._segment(
             question_text=normalized_question_text,
             response_text=normalized_response_text,
@@ -295,13 +334,16 @@ class SurveyAnalyzerService:
             response_id=response_id,
             request_id=request_id,
             client_id=client_id,
+            source_endpoint=source_endpoint,
         )
 
         if not segmented_points:
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
+        # 5. Classification + persistance
         points: List[Dict[str, Any]] = []
+
         for idx, point_text in enumerate(segmented_points, start=1):
             cls = await self._classify(
                 question_text=normalized_question_text,
@@ -310,6 +352,7 @@ class SurveyAnalyzerService:
                 response_id=response_id,
                 request_id=request_id,
                 client_id=client_id,
+                source_endpoint=source_endpoint,
             )
 
             point = {
@@ -319,31 +362,16 @@ class SurveyAnalyzerService:
                 "category": cls["category"],
                 "confidence": cls["confidence"],
             }
-            points.append(point)
 
-            self.db.add(
-                self._build_point_record(
-                    response_id=response_id,
-                    point_id=point["point_id"],
-                    text=point["text"],
-                    sentiment=point["sentiment"],
-                    category=point["category"],
-                    confidence=point["confidence"],
-                )
-            )
-            self.db.add(
-                self._build_validated_point_record(
-                    response_id=response_id,
-                    point_id=point["point_id"],
-                    text=point["text"],
-                    sentiment=point["sentiment"],
-                    category=point["category"],
-                    source="model",
-                )
-            )
+            points.append(point)
+            self._save_point(response_id, point)
 
         self._finalize_response(response)
-        return {"response_id": response_id, "points": points}
+
+        return {
+            "response_id": response_id,
+            "points": points,
+        }
 
     async def _segment(
         self,
@@ -353,6 +381,7 @@ class SurveyAnalyzerService:
         response_id: Optional[str] = None,
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
+        source_endpoint: str = "/surveys/forms/analyze",
     ) -> List[str]:
         messages = [
             {
@@ -381,6 +410,7 @@ class SurveyAnalyzerService:
             response_id=response_id or "unknown_response",
             request_id=request_id,
             client_id=client_id,
+            endpoint=source_endpoint,
             metadata={
                 **(metadata or {}),
                 "question_text": question_text,
@@ -398,6 +428,7 @@ class SurveyAnalyzerService:
         response_id: Optional[str] = None,
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
+        source_endpoint: str = "/surveys/forms/analyze",
     ) -> Dict[str, Any]:
         few_shot_examples = self._get_few_shot_examples(
             question_text=question_text,
@@ -436,6 +467,7 @@ class SurveyAnalyzerService:
             response_id=response_id or "unknown_response",
             request_id=request_id,
             client_id=client_id,
+            endpoint=source_endpoint,
             metadata={
                 **(metadata or {}),
                 "question_text": question_text,
@@ -457,6 +489,7 @@ class SurveyAnalyzerService:
         response_id: str,
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
+        endpoint: str = "/surveys/forms/analyze",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         t0 = time.perf_counter()
@@ -481,7 +514,7 @@ class SurveyAnalyzerService:
                     request_id=request_id,
                     project=SURVEY_ANALYSIS_NAME,
                     client_id=client_id,
-                    endpoint="/surveys/analyze",
+                    endpoint=endpoint,
                     feature=feature,
                     model_requested=None,
                     model_used=result.model,
@@ -522,7 +555,7 @@ class SurveyAnalyzerService:
                     request_id=request_id,
                     project=SURVEY_ANALYSIS_NAME,
                     client_id=client_id,
-                    endpoint="/surveys/analyze",
+                    endpoint=endpoint,
                     feature=feature,
                     model_requested=None,
                     input_text=None,

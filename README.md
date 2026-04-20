@@ -1,342 +1,280 @@
-# FormDev IA — Infrastructure IA locale & API intelligente
+# FormDev IA
 
-## 1. Présentation
+API d’inférence et d’analyse de questionnaires pour FormDev.
 
-FormDev IA est une infrastructure d’intelligence artificielle déployée localement (on-premise ou cloud privé type OVH) permettant d’exposer des capacités LLM via une API sécurisée.
+Le projet fournit deux briques principales :
 
-Cette infrastructure constitue le **socle IA de la plateforme FormDev** et permet d’intégrer directement des fonctionnalités avancées dans l’ERP :
-
-- génération de contenu pédagogique
-- assistance conversationnelle
-- analyse de données textuelles
-- analyse de questionnaires de satisfaction
-- futurs pipelines RAG
-
-Le système repose sur un **modèle open source exécuté localement sur GPU**, garantissant :
-
-- contrôle total des données
-- latence maîtrisée
-- indépendance vis-à-vis d’API externes
+- **Projet 2** : une route de génération / transformation de texte (`/v1/chat`)
+- **Projet 3** : un pipeline d’analyse de formulaires de satisfaction avec :
+  - traitement asynchrone
+  - segmentation en points
+  - classification sentiment / catégorie
+  - workflow de feedback opérateur
+  - mémoire vectorielle par client via Qdrant pour few-shots dynamiques
 
 ---
 
-## 2. Architecture générale
+## Sommaire
 
-L’architecture repose sur une séparation claire entre :
-
-- **inférence IA (GPU)**
-- **API gateway (logique métier + sécurité)**
-
-### Composants
-
-#### inference
-- serveur **vLLM**
-- moteur d’inférence GPU
-- compatible OpenAI API
-
-#### api
-- **FastAPI**
-- authentification par clé API
-- rate limiting
-- logique métier
-- journalisation PostgreSQL
-
-#### postgres
-- stockage des logs IA
-- stockage des données métier (questionnaires)
+- [Vue d’ensemble](#vue-densemble)
+- [Architecture](#architecture) 
+- [Technologies](#technologies)
+- [Structure du projet](#structure-du-projet)
+- [Démarrage rapide](#démarrage-rapide)
+- [Configuration](#configuration)
+- [API exposée](#api-exposée)
+- [Projet 2 — `/v1/chat`](#projet-2--v1chat)
+- [Projet 3 — questionnaires](#projet-3--questionnaires)
+- [Base de données](#base-de-données)
+- [Mémoire vectorielle Qdrant](#mémoire-vectorielle-qdrant)
+- [Migrations Alembic](#migrations-alembic)
+- [Sécurité](#sécurité)
+- [Limites actuelles](#limites-actuelles)
 
 ---
 
-### Schéma
+## Vue d’ensemble
 
-```text
-ERP / Extranet
-      │
-      ▼
-API Gateway (FastAPI)
-      │
-      ▼
-Serveur vLLM
-      │
-      ▼
-GPU
-```
+### Projet 2 — Génération / reformulation de texte
+La route `/v1/chat` permet d’utiliser un modèle servi par vLLM pour des usages de rédaction en français :
 
-⚠️ Le serveur vLLM n’est **jamais exposé directement**.
-
----
-
-## 3. Fonctionnalités
-
-## 3.1 Endpoint `/v1/chat`
-
-Interface compatible OpenAI Chat API.
-
-Permet :
 - reformulation
 - synthèse
 - enrichissement
-- génération encadrée
+- génération guidée
 
-### ⚠️ Important
+L’API prend en charge :
+- l’authentification par clé API
+- le rate limiting
+- l’injection d’un prompt système backend
+- une post-correction optionnelle par seconde inférence
 
-Le prompt système est **contrôlé côté backend**.
+### Projet 3 — Analyse de questionnaires
+La route `/surveys/forms/analyze` permet de lancer l’analyse complète d’un formulaire de satisfaction.
 
-➡️ Les messages `system` envoyés par le client sont ignorés.
-
----
-
-### Exemple requête
-
-```json
-{
-  "messages": [
-    {
-      "role": "user",
-      "content": "Explique ce qu'est un style dans Word."
-    }
-  ],
-  "max_tokens": 150
-}
-```
-
----
-
-### Exemple réponse
-
-```json
-{
-  "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
-  "content": "Un style dans Word permet d'appliquer automatiquement une mise en forme cohérente.",
-  "usage": {
-    "prompt_tokens": 40,
-    "completion_tokens": 15,
-    "total_tokens": 55
-  },
-  "latency_ms": 820
-}
-```
-
----
-
-## 3.2 Endpoint `/surveys/analyze`
-
-Analyse une réponse ouverte de questionnaire.
-
-### Pipeline
-
-1. nettoyage texte
-2. détection cas vides (RAS, néant…)
-3. segmentation en points
-4. classification :
-   - sentiment
+Le pipeline réalise :
+1. l’extraction des questions distinctes
+2. la sélection automatique des questions pertinentes
+3. le stockage des réponses
+4. la segmentation des réponses en points
+5. la classification de chaque point :
+   - sentiment sur 5
    - catégorie métier
-5. stockage en base
+6. le stockage du résultat final
+7. la relecture opérateur via `/surveys/feedback`
+8. l’alimentation d’une mémoire vectorielle Qdrant pour améliorer la classification sur les cas futurs
 
 ---
 
-### Exemple requête
+## Architecture
 
-```json
-{
-  "survey_id": "formation_word",
-  "question_id": "q1",
-  "question_text": "Ce que vous avez particulièrement apprécié :",
-  "response_text": "Petit groupe, tout le monde peut prendre la parole. Formateur clair.",
-  "metadata": {
-    "client": "Entreprise X"
-  }
-}
+Le projet repose sur quatre composants :
+
+- **FastAPI** : gateway HTTP, validation, Swagger, sécurité
+- **vLLM** : serveur d’inférence LLM OpenAI-compatible
+- **PostgreSQL** : stockage métier et logs d’interactions IA
+- **Qdrant** : mémoire vectorielle des exemples validés par client
+
+### Flux Projet 3
+1. Le client appelle `POST /surveys/forms/analyze`
+2. L’API crée un `processing_id`
+3. Le traitement est exécuté en arrière-plan
+4. Le client suit l’état via `GET /surveys/processings/{processing_id}`
+5. Le résultat final est retourné une fois le job terminé
+6. L’opérateur relit le résultat via `POST /surveys/feedback`
+7. Les corrections alimentent PostgreSQL et Qdrant
+8. Les futures classifications peuvent réutiliser des exemples proches pour le même client
+
+---
+
+## Technologies
+
+- Python 3.12
+- FastAPI
+- vLLM
+- PostgreSQL 16
+- SQLAlchemy
+- Alembic
+- Qdrant
+- FastEmbed
+- Docker / Docker Compose
+
+---
+
+## Structure du projet
+
+```text
+FormDev-IA/
+├── apps/
+│   └── api/
+│       ├── core/
+│       ├── db/
+│       │   ├── models/
+│       │   └── session.py
+│       ├── routers/
+│       ├── schemas/
+│       ├── services/
+│       ├── utils/
+│       ├── main.py
+│       └── requirements.txt
+├── infra/
+│   ├── docker-compose.yml
+│   └── .env.example
+├── bench/
+├── scripts/
+└── README.md
 ```
 
----
+### Principaux répertoires
 
-### Exemple réponse
-
-```json
-{
-  "response_id": "uuid",
-  "points": [
-    {
-      "point_id": "uuid_pt_1",
-      "text": "Petit groupe, tout le monde peut prendre la parole.",
-      "sentiment": "positive",
-      "category": "pedagogie",
-      "confidence": null
-    }
-  ]
-}
-```
+- `apps/api/core` : configuration, sécurité, rate limiting  
+- `apps/api/db/models` : modèles SQLAlchemy  
+- `apps/api/routers` : endpoints HTTP  
+- `apps/api/schemas` : schémas Pydantic  
+- `apps/api/services` : logique métier  
+- `infra` : déploiement Docker  
+- `bench` : scripts de test / benchmark  
 
 ---
 
-## 4. Multi-utilisateurs & performance
+## Démarrage rapide
 
-vLLM utilise un **KV cache paginé** :
-
-- mémoire GPU partagée
-- batching automatique
-- exécution concurrente
-
-➡️ permet de servir plusieurs utilisateurs simultanément
-
----
-
-## 5. Base de données
-
-### Tables principales
-
-#### ai_interactions
-- logs complets IA
-- tokens, latence, erreurs
-
-#### survey_responses
-- réponses brutes
-
-#### response_points
-- points extraits + classification
-
-#### point_feedback (future)
-- corrections opérateur
-
----
-
-## 6. Sécurité
-
-### Authentification
-
-Header obligatoire :
-
-```
-X-API-Key
-```
-
----
-
-### Rate limiting
-
-Actuellement :
-```
-30 requêtes / minute / IP
-```
-
-⚠️ (évolutif vers par client)
-
----
-
-### Isolation
-
-- vLLM non exposé
-- API gateway obligatoire
-
----
-
-### Firewall
-
-Ports :
-
-| port | usage |
-|------|------|
-| 22 | SSH |
-| 8080 | API |
-| 8000 | vLLM interne |
-
----
-
-## 7. Prérequis
-
-- Linux
-- Docker + Compose
-- GPU NVIDIA
-- NVIDIA Container Toolkit
-
-```bash
-nvidia-smi
-```
-
----
-
-## 8. Installation
-
-### 1. Config
+### 1. Préparer l’environnement
 
 ```bash
 cp infra/.env.example infra/.env
 ```
 
----
-
-### 2. Lancement
+### 2. Lancer les services
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d --build
+docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
+```
+
+### 3. Appliquer les migrations
+
+```bash
+docker exec -it infra-api-1 alembic upgrade head
+```
+
+### 4. Accéder à Swagger
+
+http://localhost:8080/docs
+
+### 5. Vérifier Qdrant
+
+```bash
+curl http://localhost:6333
 ```
 
 ---
 
-### 3. Vérification
+## Configuration
+
+Principales sources :
+
+- `infra/.env`
+- `apps/api/core/config.py`
+
+### Variables importantes
+
+#### API
+- `API_KEYS`
+- `RATE_LIMIT_RPM`
+- `LOG_LEVEL`
+
+#### PostgreSQL
+- `DATABASE_URL`
+
+#### Qdrant
+- `QDRANT_URL`
+- `QDRANT_COLLECTION`
+- `QDRANT_EMBEDDING_MODEL`
+- `QDRANT_VECTOR_SIZE`
+
+---
+
+## API exposée
+
+### Projet 2
+- `POST /v1/chat`
+
+### Projet 3
+- `POST /surveys/forms/analyze`
+- `GET /surveys/processings/{processing_id}`
+- `POST /surveys/feedback`
+
+---
+
+## Projet 3 — questionnaires
+
+### 1. Lancer une analyse
+
+`POST /surveys/forms/analyze`
+
+### 2. Suivre un traitement
+
+`GET /surveys/processings/{processing_id}`
+
+### 3. Feedback opérateur
+
+`POST /surveys/feedback`
+
+---
+
+## Base de données
+
+Tables principales :
+
+- `survey_responses`
+- `response_points`
+- `validated_response_points`
+- `point_feedback`
+- `survey_processing_jobs`
+- `ai_interactions`
+
+---
+
+## Mémoire vectorielle Qdrant
+
+Chaque exemple contient :
+
+- `client_id`
+- `question_text`
+- `input_point_text`
+- `final_text`
+- `final_sentiment`
+- `final_category`
+- `example_type`
+- `response_id`
+- `point_id`
+- `is_active`
+
+Utilisation :
+
+- recherche par similarité
+- filtrage par client
+- injection en few-shot
+
+---
+
+## Migrations Alembic
 
 ```bash
-curl http://localhost:8080/health
+docker exec -it infra-api-1 alembic upgrade head
 ```
 
 ---
 
-## 9. Configuration (.env)
+## Sécurité
 
-| variable | description |
-|----------|------------|
-| API_KEYS | clés autorisées |
-| RATE_LIMIT_RPM | limite |
-| MODEL_ID | modèle |
-| MAX_MODEL_LEN | contexte |
-| DTYPE | précision |
-| API_PORT | port API |
+- Auth via `X-API-Key`
+- Rate limiting actif
 
 ---
 
-## 10. Logs
+## Limites actuelles
 
-```bash
-docker compose logs -f api
-docker compose logs -f inference
-```
-
----
-
-## 11. Monitoring GPU
-
-```bash
-nvidia-smi
-```
-
----
-
-## 12. Scripts
-
-```bash
-./scripts/up.sh
-./scripts/restart.sh
-./scripts/logs.sh
-```
-
----
-
-## 13. Bonnes pratiques
-
-- centraliser la config
-- éviter les prompts en dur
-- privilégier JSON strict
-- préférer "unknown" à erreur
-
----
-
-## 14. Roadmap
-
-- feedback opérateur
-- few-shot dynamique
-- batch 1M réponses
-- RAG
-- vector DB (Qdrant)
-- workers async
-
+- Pas encore de worker distribué
+- Taxonomie globale
+- Pas de gestion multi-taxonomie avancée
