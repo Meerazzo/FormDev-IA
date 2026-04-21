@@ -17,8 +17,11 @@ class SurveyExampleMemoryService:
     - un vecteur calculé à partir de "Question + Point"
     - un payload contenant la sortie finale corrigée et les métadonnées utiles
 
-    Les recherches sont filtrées par client_id, état actif
-    et éventuellement par catégories autorisées.
+    Les recherches sont filtrées par :
+    - client_id
+    - is_active = true
+    - final_category dans les catégories autorisées
+    - question_type en priorité, avec fallback sans ce filtre
     """
 
     def __init__(
@@ -67,6 +70,11 @@ class SurveyExampleMemoryService:
         )
         self.client.create_payload_index(
             collection_name=self.collection_name,
+            field_name="question_type",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+        )
+        self.client.create_payload_index(
+            collection_name=self.collection_name,
             field_name="is_active",
             field_schema=models.PayloadSchemaType.BOOL,
         )
@@ -90,7 +98,7 @@ class SurveyExampleMemoryService:
             )
 
         return vector
-    
+
     @staticmethod
     def _build_point_qdrant_id(
         response_id: str,
@@ -123,6 +131,7 @@ class SurveyExampleMemoryService:
         example_type: str,
         response_id: str,
         point_id: Optional[str],
+        question_type: Optional[str] = None,
     ) -> str:
         """
         Ajoute ou met à jour un exemple dans Qdrant.
@@ -144,6 +153,7 @@ class SurveyExampleMemoryService:
             "final_text": final_text,
             "final_sentiment": final_sentiment,
             "final_category": final_category,
+            "question_type": question_type,
             "example_type": example_type,
             "response_id": response_id,
             "point_id": point_id,
@@ -188,28 +198,12 @@ class SurveyExampleMemoryService:
             points=[qdrant_id],
         )
 
-    def search_similar_examples(
-        self,
+    @staticmethod
+    def _build_base_must_conditions(
         *,
         client_id: str,
-        question_text: str,
-        input_point_text: str,
         allowed_categories: Optional[List[str]] = None,
-        limit: int = 3,
-    ) -> List[Dict[str, Any]]:
-        """
-        Recherche les exemples les plus proches pour un client donné.
-
-        Filtrage :
-        - client_id obligatoire
-        - is_active = true
-        - final_category dans allowed_categories si fourni
-        """
-        self.ensure_collection()
-
-        document = self.build_document(question_text, input_point_text)
-        vector = self._embed(document)
-
+    ) -> List[models.Condition]:
         must_conditions: List[models.Condition] = [
             models.FieldCondition(
                 key="client_id",
@@ -229,6 +223,15 @@ class SurveyExampleMemoryService:
                 )
             )
 
+        return must_conditions
+
+    def _query_examples(
+        self,
+        *,
+        vector: List[float],
+        must_conditions: List[models.Condition],
+        limit: int,
+    ) -> List[Dict[str, Any]]:
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=vector,
@@ -248,6 +251,7 @@ class SurveyExampleMemoryService:
                     "final_text": payload.get("final_text"),
                     "final_sentiment": payload.get("final_sentiment"),
                     "final_category": payload.get("final_category"),
+                    "question_type": payload.get("question_type"),
                     "example_type": payload.get("example_type"),
                     "response_id": payload.get("response_id"),
                     "point_id": payload.get("point_id"),
@@ -255,3 +259,86 @@ class SurveyExampleMemoryService:
             )
 
         return examples
+
+    def search_similar_examples(
+        self,
+        *,
+        client_id: str,
+        question_text: str,
+        input_point_text: str,
+        allowed_categories: Optional[List[str]] = None,
+        question_type: Optional[str] = None,
+        limit: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """
+        Recherche les exemples les plus proches pour un client donné.
+
+        Filtrage :
+        - client_id obligatoire
+        - is_active = true
+        - final_category dans allowed_categories si fourni
+        - question_type prioritaire si fourni
+        - fallback sans filtre question_type si le résultat est insuffisant
+        """
+        self.ensure_collection()
+
+        document = self.build_document(question_text, input_point_text)
+        vector = self._embed(document)
+
+        base_must_conditions = self._build_base_must_conditions(
+            client_id=client_id,
+            allowed_categories=allowed_categories,
+        )
+
+        # 1. Recherche préférentielle avec même question_type
+        if question_type:
+            typed_conditions = list(base_must_conditions)
+            typed_conditions.append(
+                models.FieldCondition(
+                    key="question_type",
+                    match=models.MatchValue(value=question_type),
+                )
+            )
+
+            typed_examples = self._query_examples(
+                vector=vector,
+                must_conditions=typed_conditions,
+                limit=limit,
+            )
+
+            if len(typed_examples) >= limit:
+                return typed_examples
+
+            # 2. Fallback sans filtre question_type
+            fallback_examples = self._query_examples(
+                vector=vector,
+                must_conditions=base_must_conditions,
+                limit=limit,
+            )
+
+            # On fusionne sans doublons, en priorisant les typed_examples
+            merged: List[Dict[str, Any]] = []
+            seen_keys: set[tuple] = set()
+
+            for ex in typed_examples + fallback_examples:
+                key = (
+                    ex.get("response_id"),
+                    ex.get("point_id"),
+                    ex.get("input_point_text"),
+                )
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                merged.append(ex)
+
+                if len(merged) >= limit:
+                    break
+
+            return merged
+
+        # 3. Recherche classique sans question_type
+        return self._query_examples(
+            vector=vector,
+            must_conditions=base_must_conditions,
+            limit=limit,
+        )

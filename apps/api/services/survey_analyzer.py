@@ -1,5 +1,5 @@
 """
-Pipeline d'analyse des réponses ouvertes de questionnaires de satisfaction.
+Pipeline d'analyse des réponses de questionnaires de satisfaction.
 """
 
 import json
@@ -41,7 +41,7 @@ class SurveyAnalyzerService:
     PIPELINE_NAME = SURVEY_ANALYSIS_PIPELINE_NAME
     PIPELINE_VERSION = SURVEY_ANALYSIS_PIPELINE_VERSION
     PROMPT_VERSION = SURVEY_ANALYSIS_PROMPT_VERSION
-    ALLOWED_CATEGORIES = SURVEY_ANALYSIS_ALLOWED_CATEGORIES
+    FALLBACK_ALLOWED_CATEGORIES = SURVEY_ANALYSIS_ALLOWED_CATEGORIES
 
     def __init__(self, vllm_client, db):
         self.preprocessor = SurveyPreprocessor()
@@ -59,6 +59,63 @@ class SurveyAnalyzerService:
             return ""
         return " ".join(text.strip().split())
 
+    @staticmethod
+    def _normalize_label(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        return " ".join(value.strip().split()).lower()
+
+    def _get_allowed_categories(self, metadata: Optional[Dict[str, Any]]) -> List[str]:
+        available_categories = (metadata or {}).get("available_categories") or []
+        labels: List[str] = []
+
+        for category in available_categories:
+            if not isinstance(category, dict):
+                continue
+
+            label = self._normalize_text(category.get("label"))
+            if label:
+                labels.append(label)
+
+        if labels:
+            return labels
+
+        return list(self.FALLBACK_ALLOWED_CATEGORIES)
+
+    def _build_normalized_category_map(
+        self,
+        allowed_categories: List[str],
+    ) -> Dict[str, str]:
+        normalized_map: Dict[str, str] = {}
+
+        for category in allowed_categories:
+            normalized = self._normalize_label(category)
+            if normalized:
+                normalized_map[normalized] = category
+
+        return normalized_map
+
+    def _resolve_category(
+        self,
+        raw_category: Optional[str],
+        allowed_categories: List[str],
+    ) -> str:
+        if not allowed_categories:
+            return "unknown"
+
+        normalized_map = self._build_normalized_category_map(allowed_categories)
+        normalized_raw = self._normalize_label(raw_category)
+
+        if normalized_raw in normalized_map:
+            return normalized_map[normalized_raw]
+
+        logger.warning(
+            "Classification returned unknown category '%s'. Falling back to first allowed category '%s'.",
+            raw_category,
+            allowed_categories[0],
+        )
+        return allowed_categories[0]
+
     def _build_response_record(
         self,
         survey_id: str,
@@ -68,13 +125,16 @@ class SurveyAnalyzerService:
         response_text: str,
         metadata: Optional[Dict[str, Any]],
     ) -> SurveyResponse:
+        question_type = (metadata or {}).get("question_type")
+        response_type = "open" if question_type == "OPEN" else "structured"
+
         return SurveyResponse(
             survey_id=survey_id,
             question_id=question_id,
             question_text=question_text,
             response_id=response_id,
             response_text=response_text,
-            response_type="open",
+            response_type=response_type,
             status="pending",
             metadata_json=metadata,
             pipeline_name=self.PIPELINE_NAME,
@@ -195,10 +255,15 @@ class SurveyAnalyzerService:
                     cleaned.append(normalized)
         return cleaned
 
-    def _normalize_classification_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        category = result.get("category", "unknown")
-        if category not in self.ALLOWED_CATEGORIES:
-            category = "unknown"
+    def _normalize_classification_result(
+        self,
+        result: Dict[str, Any],
+        allowed_categories: List[str],
+    ) -> Dict[str, Any]:
+        category = self._resolve_category(
+            raw_category=result.get("category"),
+            allowed_categories=allowed_categories,
+        )
 
         sentiment = result.get("sentiment")
         if sentiment not in {1, 2, 3, 4, 5}:
@@ -218,6 +283,9 @@ class SurveyAnalyzerService:
         limit: int = 3,
     ) -> List[Dict[str, Any]]:
         client_id = (metadata or {}).get("client_id")
+        question_type = (metadata or {}).get("question_type")
+        allowed_categories = self._get_allowed_categories(metadata)
+
         if not client_id:
             return []
 
@@ -226,7 +294,8 @@ class SurveyAnalyzerService:
                 client_id=client_id,
                 question_text=question_text,
                 input_point_text=point_text,
-                allowed_categories=self.ALLOWED_CATEGORIES,
+                allowed_categories=allowed_categories,
+                question_type=question_type,
                 limit=max(limit * 3, 10),
             )
 
@@ -260,13 +329,14 @@ class SurveyAnalyzerService:
                 str(e),
             )
             return []
-        
+
     async def analyze(
         self,
         survey_id: str,
         question_id: str,
         question_text: str,
         response_text: Optional[str],
+        response_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
@@ -276,13 +346,12 @@ class SurveyAnalyzerService:
         Analyse une réponse unitaire :
         - preprocessing
         - sortie anticipée si non pertinente
-        - segmentation
+        - segmentation ou bypass segmentation
         - classification
         - persistance
         """
-        response_id = str(uuid.uuid4())
+        response_id = response_id or str(uuid.uuid4())
 
-        # 1. Preprocessing
         pre = self.preprocessor.preprocess(
             question_text=question_text,
             response_text=response_text,
@@ -308,40 +377,56 @@ class SurveyAnalyzerService:
         self.db.add(response)
         self.db.flush()
 
-        # 2. Sorties anticipées
         if bool((metadata or {}).get("force_ignore")) or not pre["should_analyze"]:
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
-        # 3. Cas simple : opinion courte
-        if pre["response_kind"] == "short_simple_opinion" and pre["short_opinion"]:
+        allowed_categories = self._get_allowed_categories(analysis_metadata)
+        skip_segmentation = bool((analysis_metadata or {}).get("skip_segmentation", False))
+        has_dynamic_categories = bool((analysis_metadata or {}).get("available_categories"))
+
+        # On désactive le shortcut "short_simple_opinion" lorsque :
+        # - on est sur un mode catégories dynamiques
+        # - ou quand on a explicitement demandé de bypass la segmentation
+        if (
+            not has_dynamic_categories
+            and not skip_segmentation
+            and pre["response_kind"] == "short_simple_opinion"
+            and pre["short_opinion"]
+        ):
+            shortcut_category = self._resolve_category(
+                raw_category=pre["short_opinion"]["category"],
+                allowed_categories=allowed_categories,
+            )
+
             result = self._build_short_opinion_result(
                 response_id=response_id,
                 text=normalized_response_text,
                 sentiment=pre["short_opinion"]["sentiment"],
-                category=pre["short_opinion"]["category"],
+                category=shortcut_category,
             )
 
             self._save_point(response_id, result["points"][0])
             self._finalize_response(response)
             return result
 
-        # 4. Segmentation
-        segmented_points = await self._segment(
-            question_text=normalized_question_text,
-            response_text=normalized_response_text,
-            metadata=analysis_metadata,
-            response_id=response_id,
-            request_id=request_id,
-            client_id=client_id,
-            source_endpoint=source_endpoint,
-        )
+        if skip_segmentation:
+            segmented_points = [normalized_response_text] if normalized_response_text else []
+        else:
+            segmented_points = await self._segment(
+                question_text=normalized_question_text,
+                response_text=normalized_response_text,
+                metadata=analysis_metadata,
+                response_id=response_id,
+                request_id=request_id,
+                client_id=client_id,
+                source_endpoint=source_endpoint,
+            )
 
         if not segmented_points:
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
-        # 5. Classification + persistance
         points: List[Dict[str, Any]] = []
 
         for idx, point_text in enumerate(segmented_points, start=1):
@@ -430,6 +515,8 @@ class SurveyAnalyzerService:
         client_id: Optional[str] = None,
         source_endpoint: str = "/surveys/forms/analyze",
     ) -> Dict[str, Any]:
+        allowed_categories = self._get_allowed_categories(metadata)
+
         few_shot_examples = self._get_few_shot_examples(
             question_text=question_text,
             point_text=point_text,
@@ -441,7 +528,7 @@ class SurveyAnalyzerService:
             {
                 "role": "system",
                 "content": build_survey_analysis_classification_system_prompt(
-                    self.ALLOWED_CATEGORIES,
+                    allowed_categories,
                     few_shot_examples=few_shot_examples,
                 ),
             },
@@ -476,7 +563,7 @@ class SurveyAnalyzerService:
             },
         )
 
-        return self._normalize_classification_result(result)
+        return self._normalize_classification_result(result, allowed_categories)
 
     async def _call_model_json(
         self,

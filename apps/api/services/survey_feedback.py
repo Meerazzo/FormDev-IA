@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import logging
+
 from core.config import settings
 from db.models.point_feedback import PointFeedback
 from db.models.response_point import ResponsePoint
@@ -9,6 +10,7 @@ from db.models.validated_response_point import ValidatedResponsePoint
 from services.survey_example_memory import SurveyExampleMemoryService
 
 logger = logging.getLogger(__name__)
+
 
 class SurveyFeedbackService:
     def __init__(self, db):
@@ -61,9 +63,13 @@ class SurveyFeedbackService:
         saved_count = 0
 
         survey_response = self._get_survey_response(response_id)
+        response_metadata = survey_response.metadata_json if survey_response else {}
+
         enriched_metadata = {
+            **(response_metadata or {}),
             **(metadata or {}),
             "question_text": survey_response.question_text if survey_response else None,
+            "question_type": (response_metadata or {}).get("question_type"),
         }
 
         for item in points:
@@ -199,6 +205,7 @@ class SurveyFeedbackService:
     ) -> None:
         client_id = (metadata or {}).get("client_id")
         question_text = (metadata or {}).get("question_text")
+        question_type = (metadata or {}).get("question_type")
 
         if not client_id or not question_text:
             return
@@ -229,6 +236,7 @@ class SurveyFeedbackService:
                     final_text=existing_point.point_text,
                     final_sentiment=existing_point.sentiment,
                     final_category=existing_point.category,
+                    question_type=question_type,
                     example_type="operator_validated",
                     response_id=response_id,
                     point_id=item.get("point_id"),
@@ -251,6 +259,7 @@ class SurveyFeedbackService:
                 final_text=final_text,
                 final_sentiment=final_sentiment,
                 final_category=final_category,
+                question_type=question_type,
                 example_type="operator_corrected",
                 response_id=response_id,
                 point_id=item.get("point_id"),
@@ -269,6 +278,7 @@ class SurveyFeedbackService:
                 final_text=corrected_text,
                 final_sentiment=item.get("corrected_sentiment"),
                 final_category=item.get("corrected_category"),
+                question_type=question_type,
                 example_type="operator_added",
                 response_id=response_id,
                 point_id=None,

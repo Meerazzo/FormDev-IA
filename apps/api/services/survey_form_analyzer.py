@@ -40,6 +40,23 @@ class SurveyFormAnalyzerService:
                 )
 
     @staticmethod
+    def _resolve_selection_decision(
+        *,
+        question_text: str,
+        item_metadata: Dict[str, Any],
+        form_metadata: Optional[Dict[str, Any]],
+        decision_map: Dict[str, str],
+    ) -> str:
+        source_format = (form_metadata or {}).get("source_format")
+        question_type = (item_metadata or {}).get("question_type")
+
+        if source_format == "client_questionnaire_v1":
+            if question_type in {"SINGLE_CHOICE", "MULTIPLE_CHOICE", "RATING", "CHECKBOX"}:
+                return "analyze"
+
+        return decision_map.get(question_text.lower(), "ignore")
+
+    @staticmethod
     def _build_question_decision_map(
         question_decisions: List[Dict[str, str]],
     ) -> Dict[str, str]:
@@ -173,16 +190,26 @@ class SurveyFormAnalyzerService:
 
         for item in items:
             question_id = item.get("question_id")
+            input_response_id = item.get("response_id")
             question_text = " ".join((item.get("question_text") or "").strip().split())
             response_text = item.get("response_text")
+            item_metadata = item.get("metadata") or {}
+            skip_segmentation = bool(item.get("skip_segmentation", False))
 
             if not question_text:
                 continue
 
-            selection_decision = decision_map.get(question_text.lower(), "ignore")
+            selection_decision = self._resolve_selection_decision(
+                question_text=question_text,
+                item_metadata=item_metadata,
+                form_metadata=metadata,
+                decision_map=decision_map,
+            )
 
-            item_metadata = {
+            analysis_item_metadata = {
                 **(metadata or {}),
+                **item_metadata,
+                "skip_segmentation": skip_segmentation,
                 "selection_decision": selection_decision,
                 "selection_source": "llm_form_selector",
             }
@@ -193,7 +220,8 @@ class SurveyFormAnalyzerService:
                     question_id=question_id,
                     question_text=question_text,
                     response_text=response_text,
-                    metadata=item_metadata,
+                    response_id=input_response_id,
+                    metadata=analysis_item_metadata,
                     request_id=request_id,
                     client_id=client_id,
                     source_endpoint="/surveys/forms/analyze",
@@ -214,8 +242,9 @@ class SurveyFormAnalyzerService:
                     question_id=question_id,
                     question_text=question_text,
                     response_text=response_text,
+                    response_id=input_response_id,
                     metadata={
-                        **item_metadata,
+                        **analysis_item_metadata,
                         "skip_reason": "question_not_selected",
                         "force_ignore": True,
                     },

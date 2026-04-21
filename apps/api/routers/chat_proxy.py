@@ -196,6 +196,7 @@ Exemples :
 - `Fais une synthèse en 3 phrases`
 - `Rédige un paragraphe détaillé`
 - `Utilise un style professionnel et fluide`
+- - "Réponds uniquement avec le texte final" ou "Sans commentaire ni introduction" ou "Ne fais aucune explication"
 
 ### Contexte du modèle
 
@@ -231,7 +232,7 @@ async def chat(
                     {
                         "role": "user",
                         "content": (
-                            "Reformule ce texte pour une brochure de formation : "
+                            "Reformule ce texte pour une brochure de formation. Réponds uniquement avec le texte final, sans commentaire ni introduction : ... "
                             "Cette formation permet de voir plusieurs points pour apprendre à encadrer des séances de renforcement musculaire, "
                             "avec une partie pratique, des conseils de posture et des idées d'exercices adaptables à différents publics."
                         )
@@ -257,7 +258,7 @@ async def chat(
                     {
                         "role": "user",
                         "content": (
-                            "Reformule ce texte : "
+                            "Reformule ce texte dans un style plus structuré et professionnel. Réponds uniquement avec le texte final, sans commentaire ni introduction : ..."
                             "La formation sert à revoir les bases de maintenance de premier niveau sur des équipements industriels, "
                             "avec de la prévention sécurité, des contrôles visuels et quelques manipulations simples pour éviter les pannes courantes."
                         )
@@ -283,7 +284,7 @@ async def chat(
                     {
                         "role": "user",
                         "content": (
-                            "Résume ce texte en 3 phrases : "
+                            "Résume ce texte en 3 phrases claires. Réponds uniquement avec le résumé final, sans commentaire ni introduction : ..."
                             "Cette formation sensibilise les participants aux risques liés au travail en hauteur. "
                             "Elle présente les règles de sécurité, les équipements de protection individuelle, "
                             "les bonnes pratiques de vérification du matériel et les réflexes à adopter avant toute intervention. "
@@ -310,7 +311,7 @@ async def chat(
                     {
                         "role": "user",
                         "content": (
-                            "Développe cet intitulé sous la forme d'un paragraphe de présentation de formation : "
+                            "Développe cet intitulé sous la forme d'un paragraphe de présentation de formation. Réponds uniquement avec le paragraphe final, sans commentaire ni introduction : ..."
                             "Prévenir l'épuisement professionnel dans les métiers de l'accompagnement"
                         )
                     }
@@ -352,7 +353,7 @@ async def chat(
                     },
                     {
                         "role": "user",
-                        "content": "Fais maintenant une version plus concise en 2 phrases."
+                        "content": "Fais maintenant une version plus concise en 2 phrases. Réponds uniquement avec le texte final, sans commentaire ni introduction."
                     }
                 ],
                 "max_tokens": 100,

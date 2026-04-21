@@ -5,6 +5,7 @@ API publique retenue :
 - POST /surveys/forms/analyze
 - GET  /surveys/processings/{processing_id}
 - POST /surveys/feedback
+- POST /surveys/questionnaires/analyze
 
 Les endpoints sont protégés par clé API et soumis au rate limiting.
 """
@@ -24,6 +25,11 @@ from schemas.surveys import (
     SurveyProcessingCreateResponse,
     SurveyProcessingStatusResponse,
 )
+from schemas.survey_client import (
+    ClientQuestionnaireAnalyzeRequest,
+    ClientQuestionnaireAnalyzeResponse,
+)
+from services.survey_client_analyzer import SurveyClientAnalyzerService
 from services.survey_feedback import SurveyFeedbackService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
 from services.vllm_client import VLLMClient
@@ -147,6 +153,65 @@ async def get_processing_status(
         "error_message": job.error_message,
         "result": job.result_json if job.status == "FINISHED" else None,
     }
+
+
+@router.post(
+    "/questionnaires/analyze",
+    response_model=ClientQuestionnaireAnalyzeResponse,
+    summary="Analyser un questionnaire au format client",
+    description="""
+Analyse un ou plusieurs questionnaires au format client hiérarchique.
+
+Le format attendu contient :
+- `questionnaires[]`
+- `questions[]`
+- `answers[]` ou `answer`
+- `availableCategories`
+
+Le traitement :
+- transforme le format client vers le format interne
+- applique le pipeline d'analyse existant
+- reconstruit ensuite la réponse au format client enrichi avec des `segments`
+
+Types de questions pris en charge :
+- `OPEN`
+- `SINGLE_CHOICE`
+- `MULTIPLE_CHOICE`
+- `RATING`
+- `CHECKBOX`
+""",
+    responses={
+        200: {"description": "Questionnaire(s) analysé(s) avec succès"},
+        400: {"description": "Requête invalide"},
+        401: {"description": "Clé API invalide ou absente"},
+        429: {"description": "Trop de requêtes"},
+        502: {"description": "Erreur de communication avec le serveur d'inférence"},
+    },
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def analyze_client_questionnaires(
+    request: Request,
+    payload: ClientQuestionnaireAnalyzeRequest,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+):
+    _, client_id = authenticate(api_key)
+    req_id = getattr(request.state, "request_id", None)
+
+    form_analyzer = SurveyFormAnalyzerService(
+        vllm_client=VLLMClient(),
+        db=db,
+    )
+    client_service = SurveyClientAnalyzerService(form_analyzer=form_analyzer)
+
+    try:
+        return await client_service.analyze(
+            payload=payload,
+            request_id=req_id,
+            client_id=client_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
