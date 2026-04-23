@@ -38,58 +38,67 @@ class SurveyPoint(StrictModel):
 class SurveyFeedbackPoint(StrictModel):
     point_id: Optional[str] = Field(
         default=None,
-        description="Identifiant du point concerné. Absent pour un ajout manuel.",
+        description="Identifiant du point concerné. Laisser vide pour ajouter un nouveau point manuel.",
+        examples=["83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1"],
     )
     is_correct: bool = Field(
         default=False,
-        description="Indique si le point proposé par le modèle est validé tel quel.",
+        description="Indique si le point proposé par le modèle est validé tel quel par l'opérateur.",
+        examples=[False],
     )
     corrected_text: Optional[str] = Field(
         default=None,
-        description="Texte corrigé par l'opérateur.",
+        description="Texte corrigé ou reformulé par l'opérateur.",
+        examples=["Service jugé satisfaisant"],
     )
     corrected_sentiment: Optional[int] = Field(
         default=None,
         description="Sentiment corrigé sur 5 : 1 très négatif, 2 négatif, 3 neutre, 4 positif, 5 très positif.",
+        examples=[4],
     )
     corrected_category: Optional[str] = Field(
         default=None,
         description="Catégorie corrigée par l'opérateur.",
+        examples=["Satisfaction"],
     )
     action: Optional[Literal["update", "delete", "add"]] = Field(
         default=None,
-        description='Action opérateur : "update", "delete" ou "add".',
+        description='Action opérateur à appliquer : "update" pour corriger, "delete" pour désactiver, "add" pour ajouter un nouveau point.',
+        examples=["update"],
     )
 
 
 class SurveyFeedbackRequest(StrictModel):
     response_id: str = Field(
         ...,
-        description="Identifiant de la réponse concernée par le feedback.",
+        description="Identifiant technique de la réponse concernée par le feedback.",
+        examples=["83744cf8-878e-4a3d-b0ed-e523aac431ef"],
     )
     operator_id: Optional[str] = Field(
         default=None,
-        description="Identifiant de l'opérateur ayant relu la réponse.",
+        description="Identifiant de l'opérateur ou du relecteur ayant effectué la correction.",
+        examples=["op_test_001"],
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Métadonnées métier de la session de relecture.",
+        description="Métadonnées métier associées à la session de relecture.",
+        examples=[{"review_source": "manual_test"}],
     )
     points: List[SurveyFeedbackPoint] = Field(
         ...,
-        description="Liste des validations ou corrections opérateur.",
+        description="Liste des validations, corrections, suppressions ou ajouts de points.",
     )
-
 
 class SurveyFeedbackResponse(StrictModel):
     response_id: str = Field(
         ...,
         description="Identifiant de la réponse concernée par le feedback.",
+        examples=["83744cf8-878e-4a3d-b0ed-e523aac431ef"],
     )
     saved_feedback_count: int = Field(
         ...,
-        description="Nombre de lignes de feedback enregistrées.",
-        examples=[3],
+        description="Nombre d'actions de feedback enregistrées.",
+        examples=[1],
     )
     status: str = Field(
         ...,
@@ -156,12 +165,12 @@ class SurveyFormResult(StrictModel):
 class SurveyProcessingCreateResponse(StrictModel):
     processing_id: str = Field(
         ...,
-        description="Identifiant unique du traitement à suivre côté client.",
-        examples=["8df0f6f5-3c73-4e84-9dd4-2c4c6d64c111"],
+        description="Identifiant unique du traitement asynchrone à utiliser pour suivre l'analyse.",
+        examples=["90affa60-99a4-488f-9e4d-2a752de4ca1f"],
     )
     status: str = Field(
         ...,
-        description="Statut initial du traitement.",
+        description="Statut initial du traitement, généralement PENDING juste après la création.",
         examples=["PENDING"],
     )
 
@@ -170,21 +179,24 @@ class SurveyProcessingStatusResponse(StrictModel):
     processing_id: str = Field(
         ...,
         description="Identifiant unique du traitement.",
+        examples=["90affa60-99a4-488f-9e4d-2a752de4ca1f"],
     )
     status: str = Field(
         ...,
-        description="Statut courant : PENDING, STARTED, FINISHED ou FAILED.",
+        description="Statut courant du traitement : PENDING, STARTED, FINISHED ou FAILED.",
         examples=["FINISHED"],
     )
     survey_id: Optional[str] = Field(
         None,
-        description="Identifiant du formulaire associé au traitement.",
+        description="Identifiant technique associé au traitement.",
+        examples=["client_questionnaires"],
     )
     error_message: Optional[str] = Field(
         None,
         description="Message d'erreur si le traitement a échoué.",
+        examples=[None],
     )
-    result: Optional[SurveyFormResult] = Field(
+    result: Optional[Dict[str, Any]] = Field(
         None,
-        description="Résultat final du traitement si le statut est FINISHED.",
+        description="Résultat final de l'analyse lorsque le traitement est terminé.",
     )

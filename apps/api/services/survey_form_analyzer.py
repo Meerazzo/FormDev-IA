@@ -5,7 +5,7 @@ Gestion des traitements d'analyse de formulaires.
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-
+from schemas.survey_client import ClientQuestionnaireAnalyzeRequest
 from core.feature_config import (
     SURVEY_FORM_MAX_DISTINCT_QUESTIONS,
     SURVEY_FORM_MAX_ITEMS,
@@ -73,6 +73,26 @@ class SurveyFormAnalyzerService:
 
         return mapping
 
+    def create_client_processing_job(
+        self,
+        payload: ClientQuestionnaireAnalyzeRequest,
+        client_id: Optional[str] = None,
+    ) -> SurveyProcessingJob:
+        processing_id = str(uuid.uuid4())
+
+        job = SurveyProcessingJob(
+            processing_id=processing_id,
+            survey_id="client_questionnaires",
+            client_id=client_id,
+            status="PENDING",
+            request_payload_json=payload.model_dump(),
+        )
+
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
     def create_processing_job(
         self,
         survey_id: str,
@@ -121,6 +141,53 @@ class SurveyFormAnalyzerService:
             query = query.filter(SurveyProcessingJob.client_id == client_id)
 
         return query.first()
+
+    async def run_client_processing_job(
+        self,
+        processing_id: str,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        from schemas.survey_client import ClientQuestionnaireAnalyzeRequest
+        from services.survey_client_analyzer import SurveyClientAnalyzerService
+
+        job = (
+            self.db.query(SurveyProcessingJob)
+            .filter(SurveyProcessingJob.processing_id == processing_id)
+            .first()
+        )
+
+        if not job:
+            raise ValueError(f"Processing job not found: {processing_id}")
+
+        job.status = "STARTED"
+        job.started_at = datetime.now(timezone.utc)
+        self.db.commit()
+
+        try:
+            payload = ClientQuestionnaireAnalyzeRequest(**(job.request_payload_json or {}))
+
+            client_service = SurveyClientAnalyzerService(form_analyzer=self)
+
+            result = await client_service.analyze(
+                payload=payload,
+                request_id=request_id,
+                client_id=job.client_id,
+            )
+
+            job.status = "FINISHED"
+            job.result_json = result.model_dump()
+            job.finished_at = datetime.now(timezone.utc)
+            job.error_message = None
+            self.db.commit()
+
+            return result.model_dump()
+
+        except Exception as e:
+            job.status = "FAILED"
+            job.error_message = str(e)
+            job.finished_at = datetime.now(timezone.utc)
+            self.db.commit()
+            raise
 
     async def run_processing_job(
         self,
@@ -178,6 +245,7 @@ class SurveyFormAnalyzerService:
         request_id: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        self._validate_form_payload(items)
         distinct_questions = self.question_selector.extract_distinct_questions(items)
         selection_result = await self.question_selector.select_questions_in_chunks(
             distinct_questions
@@ -224,7 +292,7 @@ class SurveyFormAnalyzerService:
                     metadata=analysis_item_metadata,
                     request_id=request_id,
                     client_id=client_id,
-                    source_endpoint="/surveys/forms/analyze",
+                    source_endpoint="/surveys/analyze"
                 )
 
                 response_results.append(
@@ -250,7 +318,7 @@ class SurveyFormAnalyzerService:
                     },
                     request_id=request_id,
                     client_id=client_id,
-                    source_endpoint="/surveys/forms/analyze",
+                    source_endpoint="/surveys/analyze"
                 )
 
                 response_results.append(

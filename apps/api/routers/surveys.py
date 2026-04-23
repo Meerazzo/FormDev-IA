@@ -2,15 +2,14 @@
 Routes HTTP d'analyse des questionnaires de satisfaction.
 
 API publique retenue :
-- POST /surveys/forms/analyze
+- POST /surveys/analyze
 - GET  /surveys/processings/{processing_id}
 - POST /surveys/feedback
-- POST /surveys/questionnaires/analyze
 
 Les endpoints sont protégés par clé API et soumis au rate limiting.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Security, Body
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -21,15 +20,10 @@ from db.session import get_db
 from schemas.surveys import (
     SurveyFeedbackRequest,
     SurveyFeedbackResponse,
-    SurveyFormAnalyzeRequest,
     SurveyProcessingCreateResponse,
     SurveyProcessingStatusResponse,
 )
-from schemas.survey_client import (
-    ClientQuestionnaireAnalyzeRequest,
-    ClientQuestionnaireAnalyzeResponse,
-)
-from services.survey_client_analyzer import SurveyClientAnalyzerService
+from schemas.survey_client import ClientQuestionnaireAnalyzeRequest
 from services.survey_feedback import SurveyFeedbackService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
 from services.vllm_client import VLLMClient
@@ -41,25 +35,37 @@ router = APIRouter(prefix="/surveys", tags=["surveys"])
 
 
 @router.post(
-    "/forms/analyze",
+    "/analyze",
     response_model=SurveyProcessingCreateResponse,
-    summary="Lancer l'analyse complète d'un formulaire",
+    summary="Lancer l'analyse asynchrone d'un ou plusieurs questionnaires",
     description="""
-Crée un traitement d'analyse de formulaire et retourne immédiatement un identifiant de traitement.
+Crée un traitement d'analyse asynchrone à partir du format questionnaire client.
 
-Le traitement complet est ensuite exécuté en arrière-plan.
+### Format attendu
+La requête doit utiliser le format hiérarchique métier :
+- `questionnaires[]`
+- `availableCategories`
+- `questions[]`
+- `answers[]` ou `answer` selon le type de question
 
-### Étapes du traitement
-- extraction des questions distinctes
-- sélection automatique des questions pertinentes
-- stockage de toutes les réponses
-- analyse uniquement des réponses retenues
-- enregistrement du résultat final
+### Types de questions pris en charge
+- `OPEN`
+- `SINGLE_CHOICE`
+- `MULTIPLE_CHOICE`
+- `RATING`
+- `CHECKBOX`
+
+### Fonctionnement
+L'API :
+- enregistre immédiatement un traitement
+- retourne un `processing_id`
+- exécute ensuite l'analyse en arrière-plan
 
 ### Suivi
 Le client peut ensuite interroger :
 `GET /surveys/processings/{processing_id}`
-pour suivre l'état du traitement et récupérer le résultat final.
+
+pour suivre l'état du traitement et récupérer le résultat final une fois terminé.
 """,
     responses={
         200: {"description": "Traitement créé avec succès"},
@@ -70,13 +76,137 @@ pour suivre l'état du traitement et récupérer le résultat final.
     },
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
-async def analyze_form(
+async def analyze_surveys(
     request: Request,
     background_tasks: BackgroundTasks,
-    payload: SurveyFormAnalyzeRequest,
+    payload: ClientQuestionnaireAnalyzeRequest = Body(
+        ...,
+        openapi_examples={
+            "questionnaire_complet": {
+                "summary": "Questionnaire complet avec plusieurs types de questions",
+                "description": "Exemple complet contenant une question ouverte, une question à choix simple, une question à choix multiples, une note et une case à cocher.",
+                "value": {
+                    "questionnaires": [
+                        {
+                            "id": 1,
+                            "availableCategories": [
+                                {"id": 10, "label": "Satisfaction", "metadata": {}},
+                                {"id": 11, "label": "Amélioration", "metadata": {}}
+                            ],
+                            "questions": [
+                                {
+                                    "id": 100,
+                                    "label": "Avez-vous des suggestions ?",
+                                    "type": "OPEN",
+                                    "answers": [
+                                        {
+                                            "id": 2000,
+                                            "type": "FREE_TEXT",
+                                            "label": "Plus de choix de produits et un service client plus réactif serait apprécié.",
+                                            "metadata": {}
+                                        }
+                                    ],
+                                    "metadata": {}
+                                },
+                                {
+                                    "id": 101,
+                                    "label": "Comment évaluez-vous notre service ?",
+                                    "type": "SINGLE_CHOICE",
+                                    "availableAnswers": [
+                                        {"id": 1000, "label": "Excellent", "metadata": {}},
+                                        {"id": 1001, "label": "Bon", "metadata": {}},
+                                        {"id": 1002, "label": "Moyen", "metadata": {}},
+                                        {"id": 1003, "label": "Mauvais", "metadata": {}}
+                                    ],
+                                    "answer": {
+                                        "id": 2001,
+                                        "type": "CHOICE",
+                                        "idAvailableAnswer": 1001,
+                                        "metadata": {}
+                                    },
+                                    "metadata": {}
+                                },
+                                {
+                                    "id": 102,
+                                    "label": "Quels aspects appréciez-vous ?",
+                                    "type": "MULTIPLE_CHOICE",
+                                    "availableAnswers": [
+                                        {"id": 1010, "label": "Accueil", "metadata": {}},
+                                        {"id": 1011, "label": "Prix", "metadata": {}},
+                                        {"id": 1012, "label": "Qualité", "metadata": {}}
+                                    ],
+                                    "answers": [
+                                        {"id": 2002, "type": "CHOICE", "idAvailableAnswer": 1010, "metadata": {}},
+                                        {"id": 2003, "type": "CHOICE", "idAvailableAnswer": 1012, "metadata": {}}
+                                    ],
+                                    "metadata": {}
+                                },
+                                {
+                                    "id": 103,
+                                    "label": "Notez notre site",
+                                    "type": "RATING",
+                                    "maxValue": 5,
+                                    "value": 4,
+                                    "metadata": {}
+                                },
+                                {
+                                    "id": 104,
+                                    "label": "Souhaitez-vous recevoir la newsletter ?",
+                                    "type": "CHECKBOX",
+                                    "checked": True,
+                                    "metadata": {}
+                                }
+                            ],
+                            "metadata": {
+                                "formation": "Questionnaire complet nominal"
+                            }
+                        }
+                    ]
+                },
+            },
+            "questionnaire_partiel": {
+                "summary": "Questionnaire partiel avec réponses absentes",
+                "description": "Exemple utile pour vérifier le comportement lorsque certaines réponses sont absentes ou nulles.",
+                "value": {
+                    "questionnaires": [
+                        {
+                            "id": 3,
+                            "availableCategories": [
+                                {"id": 10, "label": "Satisfaction", "metadata": {}},
+                                {"id": 11, "label": "Amélioration", "metadata": {}}
+                            ],
+                            "questions": [
+                                {
+                                    "id": 300,
+                                    "label": "Avez-vous des suggestions ?",
+                                    "type": "OPEN",
+                                    "answers": [],
+                                    "metadata": {}
+                                },
+                                {
+                                    "id": 301,
+                                    "label": "Comment évaluez-vous notre service ?",
+                                    "type": "SINGLE_CHOICE",
+                                    "availableAnswers": [
+                                        {"id": 3000, "label": "Excellent", "metadata": {}},
+                                        {"id": 3001, "label": "Bon", "metadata": {}}
+                                    ],
+                                    "answer": None,
+                                    "metadata": {}
+                                }
+                            ],
+                            "metadata": {
+                                "formation": "Questionnaire partiel"
+                            }
+                        }
+                    ]
+                },
+            },
+        },
+    ),
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
-):
+): 
     _, client_id = authenticate(api_key)
     req_id = getattr(request.state, "request_id", None)
 
@@ -86,17 +216,15 @@ async def analyze_form(
     )
 
     try:
-        job = service.create_processing_job(
-            survey_id=payload.survey_id,
-            items=[item.model_dump() for item in payload.items],
-            metadata=payload.metadata,
+        job = service.create_client_processing_job(
+            payload=payload,
             client_id=client_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     background_tasks.add_task(
-        _run_form_processing_task,
+        _run_client_processing_task,
         processing_id=job.processing_id,
         request_id=req_id,
     )
@@ -110,17 +238,18 @@ async def analyze_form(
 @router.get(
     "/processings/{processing_id}",
     response_model=SurveyProcessingStatusResponse,
-    summary="Consulter l'état d'un traitement",
+    summary="Consulter l'état et le résultat d'un traitement d'analyse",
     description="""
-Retourne l'état d'un traitement d'analyse de formulaire.
+Retourne l'état d'un traitement d'analyse précédemment créé via `POST /surveys/analyze`.
 
-Statuts possibles :
-- `PENDING`
-- `STARTED`
-- `FINISHED`
-- `FAILED`
+### Statuts possibles
+- `PENDING` : traitement enregistré mais pas encore démarré
+- `STARTED` : traitement en cours d'exécution
+- `FINISHED` : traitement terminé avec succès
+- `FAILED` : traitement terminé en erreur
 
-Si le traitement est terminé, le résultat complet est renvoyé.
+### Résultat
+Quand le statut est `FINISHED`, le champ `result` contient la sortie finale d'analyse au format client enrichi avec les segments.
 """,
     responses={
         200: {"description": "Statut du traitement récupéré avec succès"},
@@ -156,82 +285,22 @@ async def get_processing_status(
 
 
 @router.post(
-    "/questionnaires/analyze",
-    response_model=ClientQuestionnaireAnalyzeResponse,
-    summary="Analyser un questionnaire au format client",
-    description="""
-Analyse un ou plusieurs questionnaires au format client hiérarchique.
-
-Le format attendu contient :
-- `questionnaires[]`
-- `questions[]`
-- `answers[]` ou `answer`
-- `availableCategories`
-
-Le traitement :
-- transforme le format client vers le format interne
-- applique le pipeline d'analyse existant
-- reconstruit ensuite la réponse au format client enrichi avec des `segments`
-
-Types de questions pris en charge :
-- `OPEN`
-- `SINGLE_CHOICE`
-- `MULTIPLE_CHOICE`
-- `RATING`
-- `CHECKBOX`
-""",
-    responses={
-        200: {"description": "Questionnaire(s) analysé(s) avec succès"},
-        400: {"description": "Requête invalide"},
-        401: {"description": "Clé API invalide ou absente"},
-        429: {"description": "Trop de requêtes"},
-        502: {"description": "Erreur de communication avec le serveur d'inférence"},
-    },
-)
-@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
-async def analyze_client_questionnaires(
-    request: Request,
-    payload: ClientQuestionnaireAnalyzeRequest,
-    db: Session = Depends(get_db),
-    api_key: str | None = Security(api_key_header),
-):
-    _, client_id = authenticate(api_key)
-    req_id = getattr(request.state, "request_id", None)
-
-    form_analyzer = SurveyFormAnalyzerService(
-        vllm_client=VLLMClient(),
-        db=db,
-    )
-    client_service = SurveyClientAnalyzerService(form_analyzer=form_analyzer)
-
-    try:
-        return await client_service.analyze(
-            payload=payload,
-            request_id=req_id,
-            client_id=client_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@router.post(
     "/feedback",
     response_model=SurveyFeedbackResponse,
-    summary="Enregistrer un feedback opérateur sur les points analysés",
+    summary="Enregistrer un feedback opérateur sur une analyse",
     description="""
-Enregistre la validation ou la correction opérateur d'une réponse analysée.
+Enregistre une validation ou une correction opérateur sur les points issus d'une analyse.
 
-Cette route permet de :
-- valider un point tel quel
-- corriger le texte d'un point
-- corriger son sentiment
-- corriger sa catégorie
-- supprimer métierement un point
-- ajouter un point manuel
+### Actions possibles
+- `update` : corriger un point existant
+- `delete` : désactiver un point existant
+- `add` : ajouter un nouveau point manuel
 
-Le feedback est enregistré dans la table `point_feedback`.
-Les données finales corrigées sont maintenues dans `validated_response_points`.
-La mémoire vectorielle Qdrant est mise à jour en best effort.
+### Effets
+L'API :
+- enregistre le feedback dans `point_feedback`
+- met à jour les données finales dans `validated_response_points`
+- met à jour la mémoire Qdrant en best effort pour les futurs cas similaires
 """,
     responses={
         200: {"description": "Feedback enregistré avec succès"},
@@ -243,7 +312,74 @@ La mémoire vectorielle Qdrant est mise à jour en best effort.
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def save_survey_feedback(
     request: Request,
-    payload: SurveyFeedbackRequest,
+    payload: SurveyFeedbackRequest = Body(
+        ...,
+        openapi_examples={
+            "correction_point_existant": {
+                "summary": "Correction d'un point existant",
+                "description": "Exemple de correction d'un point produit par le modèle.",
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_test"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": False,
+                            "corrected_text": "Service jugé satisfaisant",
+                            "corrected_sentiment": 4,
+                            "corrected_category": "Satisfaction",
+                            "action": "update"
+                        }
+                    ]
+                },
+            },
+            "ajout_point_manuel": {
+                "summary": "Ajout manuel d'un point",
+                "description": "Exemple d'ajout d'un nouveau point qui n'avait pas été détecté automatiquement.",
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_test"
+                    },
+                    "points": [
+                        {
+                            "point_id": None,
+                            "is_correct": False,
+                            "corrected_text": "Navigation à améliorer",
+                            "corrected_sentiment": 2,
+                            "corrected_category": "Amélioration",
+                            "action": "add"
+                        }
+                    ]
+                },
+            },
+            "suppression_point": {
+                "summary": "Suppression d'un point",
+                "description": "Exemple de désactivation d'un point jugé non pertinent.",
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_test"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": False,
+                            "corrected_text": None,
+                            "corrected_sentiment": None,
+                            "corrected_category": None,
+                            "action": "delete"
+                        }
+                    ]
+                },
+            },
+        },
+    ),
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ):
@@ -259,12 +395,12 @@ async def save_survey_feedback(
     )
 
 
-async def _run_form_processing_task(
+async def _run_client_processing_task(
     processing_id: str,
     request_id: str | None = None,
 ) -> None:
     """
-    Lance le traitement complet d'un formulaire en arrière-plan.
+    Lance le traitement complet d'un questionnaire en arrière-plan.
     Cette fonction recrée sa propre session DB.
     """
     db_gen = get_db()
@@ -274,7 +410,7 @@ async def _run_form_processing_task(
             vllm_client=VLLMClient(),
             db=db,
         )
-        await service.run_processing_job(
+        await service.run_client_processing_job(
             processing_id=processing_id,
             request_id=request_id,
         )

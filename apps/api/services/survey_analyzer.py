@@ -60,6 +60,75 @@ class SurveyAnalyzerService:
         return " ".join(text.strip().split())
 
     @staticmethod
+    def _build_structured_classification_system_prompt(
+        allowed_categories: List[str],
+    ) -> str:
+        return f"""
+    Tu analyses une réponse à une question fermée issue d'un questionnaire.
+
+    Objectifs :
+    - produire un texte final court, stable et directement exploitable
+    - attribuer un sentiment sur 5
+    - choisir une catégorie parmi la liste autorisée
+
+    Types de questions possibles :
+    - SINGLE_CHOICE
+    - MULTIPLE_CHOICE
+    - RATING
+    - CHECKBOX
+
+    Règles générales :
+    - interprète toujours la réponse dans le contexte de la question ET des choix possibles
+    - pour SINGLE_CHOICE et MULTIPLE_CHOICE, utilise la liste des réponses possibles pour comprendre la valeur du choix sélectionné
+    - pour RATING, interprète la note dans le contexte de la formulation de la question
+    - pour CHECKBOX, reformule la réponse de façon métier et explicite
+    - n'invente aucune information absente de la question ou de la réponse
+    - choisis la catégorie la plus pertinente parmi la liste autorisée
+    - n'utilise jamais de catégorie hors liste
+
+    Contraintes sur le champ "text" :
+    - le texte doit être COURT
+    - le texte doit être STABLE
+    - le texte ne doit pas être une phrase conversationnelle
+    - évite "je", "nous", "le client", "on"
+    - évite les phrases complètes avec verbe conjugué si une formulation nominale suffit
+    - évite les justifications
+    - pas de ponctuation finale inutile
+    - privilégie des formulations sobres de type :
+    - "Service jugé bon"
+    - "Accueil apprécié"
+    - "Qualité appréciée"
+    - "Note : 4/5"
+    - "Souhaite recevoir la newsletter"
+    - "Ne souhaite pas recevoir la newsletter"
+
+    Indications par type :
+    - SINGLE_CHOICE : produire une reformulation courte du choix sélectionné, contextualisée par la question
+    - MULTIPLE_CHOICE : produire une reformulation courte du choix coché, contextualisée par la question
+    - RATING : conserver une formulation courte centrée sur la note
+    - CHECKBOX : produire une reformulation métier courte à partir de la question et de la valeur cochée
+
+    Échelle de sentiment :
+    1 = très négatif
+    2 = négatif
+    3 = neutre
+    4 = positif
+    5 = très positif
+
+    Catégories autorisées uniquement :
+    {allowed_categories}
+
+    Format de sortie strict :
+    {{"text": "...", "sentiment": 1|2|3|4|5, "category": "...", "confidence": null}}
+
+    Ne retourne rien d'autre que ce JSON.
+    """.strip()
+
+    @staticmethod
+    def _is_structured_question(question_type: Optional[str]) -> bool:
+        return question_type in {"SINGLE_CHOICE", "MULTIPLE_CHOICE", "RATING", "CHECKBOX"}
+
+    @staticmethod
     def _normalize_label(value: Optional[str]) -> str:
         if not value:
             return ""
@@ -330,6 +399,67 @@ class SurveyAnalyzerService:
             )
             return []
 
+    async def _classify_structured(
+        self,
+        question_text: str,
+        point_text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        response_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+        source_endpoint: str = "/surveys/forms/analyze",
+    ) -> Dict[str, Any]:
+        allowed_categories = self._get_allowed_categories(metadata)
+
+        structured_payload = {
+            "question_type": (metadata or {}).get("question_type"),
+            "question_text": question_text,
+            "selected_text": point_text,
+            "selected_answer_id": (metadata or {}).get("selected_answer_id"),
+            "available_answers": (metadata or {}).get("available_answers"),
+            "value": (metadata or {}).get("value"),
+            "max_value": (metadata or {}).get("max_value"),
+            "checked": (metadata or {}).get("checked"),
+            "available_categories": (metadata or {}).get("available_categories"),
+            "metadata": metadata or {},
+        }
+
+        messages = [
+            {
+                "role": "system",
+                "content": self._build_structured_classification_system_prompt(
+                    allowed_categories
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(structured_payload, ensure_ascii=False),
+            },
+        ]
+
+        result = await self._call_model_json(
+            feature="survey_structured_classification",
+            messages=messages,
+            max_tokens=SURVEY_ANALYSIS_CLASSIFICATION_MAX_TOKENS,
+            temperature=SURVEY_ANALYSIS_CLASSIFICATION_TEMPERATURE,
+            top_p=SURVEY_ANALYSIS_TOP_P,
+            response_id=response_id or "unknown_response",
+            request_id=request_id,
+            client_id=client_id,
+            endpoint=source_endpoint,
+            metadata={
+                **(metadata or {}),
+                "question_text": question_text,
+                "point_text": point_text,
+                "stage": "structured_classification",
+            },
+        )
+
+        normalized = self._normalize_classification_result(result, allowed_categories)
+        normalized["text"] = self._normalize_text(result.get("text")) or point_text
+
+        return normalized
+
     async def analyze(
         self,
         survey_id: str,
@@ -361,11 +491,14 @@ class SurveyAnalyzerService:
 
         analysis_metadata = {
             **(metadata or {}),
+            "client_id": (metadata or {}).get("client_id") or client_id,
             "response_kind": pre["response_kind"],
             "skip_reason": pre["skip_reason"],
             "question_kind": pre["question_kind"],
         }
-
+        question_type = analysis_metadata.get("question_type")
+        skip_segmentation = bool(analysis_metadata.get("skip_segmentation", False))
+        is_structured_question = self._is_structured_question(question_type)
         response = self._build_response_record(
             survey_id=survey_id,
             question_id=question_id,
@@ -377,13 +510,16 @@ class SurveyAnalyzerService:
         self.db.add(response)
         self.db.flush()
 
-        if bool((metadata or {}).get("force_ignore")) or not pre["should_analyze"]:
+        if bool(analysis_metadata.get("force_ignore")):
+            self._finalize_response(response)
+            return {"response_id": response_id, "points": []}
+
+        if not pre["should_analyze"] and not (skip_segmentation and is_structured_question):
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}
 
         allowed_categories = self._get_allowed_categories(analysis_metadata)
-        skip_segmentation = bool((analysis_metadata or {}).get("skip_segmentation", False))
-        has_dynamic_categories = bool((analysis_metadata or {}).get("available_categories"))
+        has_dynamic_categories = bool(analysis_metadata.get("available_categories"))
 
         # On désactive le shortcut "short_simple_opinion" lorsque :
         # - on est sur un mode catégories dynamiques
@@ -430,19 +566,32 @@ class SurveyAnalyzerService:
         points: List[Dict[str, Any]] = []
 
         for idx, point_text in enumerate(segmented_points, start=1):
-            cls = await self._classify(
-                question_text=normalized_question_text,
-                point_text=point_text,
-                metadata=analysis_metadata,
-                response_id=response_id,
-                request_id=request_id,
-                client_id=client_id,
-                source_endpoint=source_endpoint,
-            )
+            if skip_segmentation and is_structured_question:
+                cls = await self._classify_structured(
+                    question_text=normalized_question_text,
+                    point_text=point_text,
+                    metadata=analysis_metadata,
+                    response_id=response_id,
+                    request_id=request_id,
+                    client_id=client_id,
+                    source_endpoint=source_endpoint,
+                )
+                final_text = cls.get("text") or point_text
+            else:
+                cls = await self._classify(
+                    question_text=normalized_question_text,
+                    point_text=point_text,
+                    metadata=analysis_metadata,
+                    response_id=response_id,
+                    request_id=request_id,
+                    client_id=client_id,
+                    source_endpoint=source_endpoint,
+                )
+                final_text = point_text
 
             point = {
                 "point_id": f"{response_id}_pt_{idx}",
-                "text": point_text,
+                "text": final_text,
                 "sentiment": cls["sentiment"],
                 "category": cls["category"],
                 "confidence": cls["confidence"],

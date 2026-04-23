@@ -2,13 +2,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from schemas.survey_client import (
     ClientAnswerOutput,
-    ClientCheckboxQuestionOutput,
     ClientOpenQuestionOutput,
     ClientMultipleChoiceQuestionOutput,
     ClientQuestionnaireAnalyzeRequest,
     ClientQuestionnaireAnalyzeResponse,
     ClientQuestionnaireOutput,
-    ClientRatingQuestionOutput,
+    ClientQuestionWithSegmentsOutput,
     ClientSegment,
     ClientSingleChoiceQuestionOutput,
 )
@@ -31,10 +30,18 @@ class SurveyClientAnalyzerService:
         questionnaires_output: List[ClientQuestionnaireOutput] = []
 
         for questionnaire_input, flat in zip(payload.questionnaires, flattened):
+            analysis_metadata = {
+                **(flat.get("metadata") or {}),
+                "source_format": "client_questionnaire_v1",
+            }
+
+            if client_id and "client_id" not in analysis_metadata:
+                analysis_metadata["client_id"] = client_id
+
             result = await self.form_analyzer._analyze_form_payload(
                 survey_id=flat["survey_id"],
                 items=flat["items"],
-                metadata=flat.get("metadata"),
+                metadata=analysis_metadata,
                 request_id=request_id,
                 client_id=client_id,
             )
@@ -251,8 +258,6 @@ class SurveyClientAnalyzerService:
 
         return ClientOpenQuestionOutput(
             id=question.id,
-            label=question.label,
-            type="OPEN",
             answers=answers_output,
             metadata=question.metadata,
         )
@@ -288,9 +293,6 @@ class SurveyClientAnalyzerService:
 
         return ClientSingleChoiceQuestionOutput(
             id=question.id,
-            label=question.label,
-            type="SINGLE_CHOICE",
-            availableAnswers=question.availableAnswers,
             answer=answer_output,
             metadata=question.metadata,
         )
@@ -328,9 +330,6 @@ class SurveyClientAnalyzerService:
 
         return ClientMultipleChoiceQuestionOutput(
             id=question.id,
-            label=question.label,
-            type="MULTIPLE_CHOICE",
-            availableAnswers=question.availableAnswers,
             answers=answers_output,
             metadata=question.metadata,
         )
@@ -343,7 +342,7 @@ class SurveyClientAnalyzerService:
         available_categories: List[Any],
         response_locator_map: Dict[Tuple[str, str, Optional[str]], str],
         response_points_map: Dict[str, List[Dict[str, Any]]],
-    ) -> ClientRatingQuestionOutput:
+    ) -> ClientQuestionWithSegmentsOutput:
         points = self._get_points_for_answer(
             questionnaire_id=questionnaire_id,
             question_id=question.id,
@@ -352,12 +351,8 @@ class SurveyClientAnalyzerService:
             response_points_map=response_points_map,
         )
 
-        return ClientRatingQuestionOutput(
+        return ClientQuestionWithSegmentsOutput(
             id=question.id,
-            label=question.label,
-            type="RATING",
-            maxValue=question.maxValue,
-            value=question.value,
             segments=self._map_segments(
                 points=points,
                 available_categories=available_categories,
@@ -373,7 +368,7 @@ class SurveyClientAnalyzerService:
         available_categories: List[Any],
         response_locator_map: Dict[Tuple[str, str, Optional[str]], str],
         response_points_map: Dict[str, List[Dict[str, Any]]],
-    ) -> ClientCheckboxQuestionOutput:
+    ) -> ClientQuestionWithSegmentsOutput:
         points = self._get_points_for_answer(
             questionnaire_id=questionnaire_id,
             question_id=question.id,
@@ -382,11 +377,8 @@ class SurveyClientAnalyzerService:
             response_points_map=response_points_map,
         )
 
-        return ClientCheckboxQuestionOutput(
+        return ClientQuestionWithSegmentsOutput(
             id=question.id,
-            label=question.label,
-            type="CHECKBOX",
-            checked=question.checked,
             segments=self._map_segments(
                 points=points,
                 available_categories=available_categories,
