@@ -12,3 +12,6 @@ psycopg2-binary==2.9.10
 alembic==1.15.2
 
 qdrant-client[fastembed]==1.14.2
+
+rq==2.8.0
+redis==7.4.0

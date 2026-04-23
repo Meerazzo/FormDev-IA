@@ -9,7 +9,7 @@ API publique retenue :
 Les endpoints sont protégés par clé API et soumis au rate limiting.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Security, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Security, Body
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from schemas.survey_client import ClientQuestionnaireAnalyzeRequest
 from services.survey_feedback import SurveyFeedbackService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
 from services.vllm_client import VLLMClient
+from services.survey_queue import enqueue_survey_job
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
@@ -78,7 +79,6 @@ pour suivre l'état du traitement et récupérer le résultat final une fois ter
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def analyze_surveys(
     request: Request,
-    background_tasks: BackgroundTasks,
     payload: ClientQuestionnaireAnalyzeRequest = Body(
         ...,
         openapi_examples={
@@ -223,11 +223,7 @@ async def analyze_surveys(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    background_tasks.add_task(
-        _run_client_processing_task,
-        processing_id=job.processing_id,
-        request_id=req_id,
-    )
+    enqueue_survey_job(job.processing_id)
 
     return {
         "processing_id": job.processing_id,
@@ -394,25 +390,26 @@ async def save_survey_feedback(
         metadata=payload.metadata,
     )
 
-
-async def _run_client_processing_task(
-    processing_id: str,
-    request_id: str | None = None,
-) -> None:
-    """
-    Lance le traitement complet d'un questionnaire en arrière-plan.
-    Cette fonction recrée sa propre session DB.
-    """
-    db_gen = get_db()
-    db = next(db_gen)
-    try:
-        service = SurveyFormAnalyzerService(
-            vllm_client=VLLMClient(),
-            db=db,
-        )
-        await service.run_client_processing_job(
-            processing_id=processing_id,
-            request_id=request_id,
-        )
-    finally:
-        db.close()
+'''
+    async def _run_client_processing_task(
+        processing_id: str,
+        request_id: str | None = None,
+    ) -> None:
+        """
+        Lance le traitement complet d'un questionnaire en arrière-plan.
+        Cette fonction recrée sa propre session DB.
+        """
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            service = SurveyFormAnalyzerService(
+                vllm_client=VLLMClient(),
+                db=db,
+            )
+            await service.run_client_processing_job(
+                processing_id=processing_id,
+                request_id=request_id,
+            )
+        finally:
+            db.close()
+'''

@@ -34,5 +34,11 @@ class Settings(BaseSettings):
     QDRANT_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     QDRANT_VECTOR_SIZE: int = 384
 
+    REDIS_HOST: str = "127.0.0.1"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    RQ_SURVEY_QUEUE: str = "survey"
+    RQ_DEFAULT_TIMEOUT: int = 3600
+
 
 settings = Settings()
