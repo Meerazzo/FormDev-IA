@@ -30,5 +30,7 @@ def enqueue_survey_job(processing_id: str) -> str:
     job = queue.enqueue(
         process_survey_job,
         processing_id,
+        result_ttl=settings.RQ_RESULT_TTL,
+        failure_ttl=settings.RQ_FAILURE_TTL,
     )
     return job.id

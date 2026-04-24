@@ -390,26 +390,3 @@ async def save_survey_feedback(
         metadata=payload.metadata,
     )
 
-'''
-    async def _run_client_processing_task(
-        processing_id: str,
-        request_id: str | None = None,
-    ) -> None:
-        """
-        Lance le traitement complet d'un questionnaire en arrière-plan.
-        Cette fonction recrée sa propre session DB.
-        """
-        db_gen = get_db()
-        db = next(db_gen)
-        try:
-            service = SurveyFormAnalyzerService(
-                vllm_client=VLLMClient(),
-                db=db,
-            )
-            await service.run_client_processing_job(
-                processing_id=processing_id,
-                request_id=request_id,
-            )
-        finally:
-            db.close()
-'''

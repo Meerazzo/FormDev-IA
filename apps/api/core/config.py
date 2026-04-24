@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     RQ_SURVEY_QUEUE: str = "survey"
     RQ_DEFAULT_TIMEOUT: int = 3600
+    RQ_RESULT_TTL: int = 600
+    RQ_FAILURE_TTL: int = 86400
 
 
 settings = Settings()
