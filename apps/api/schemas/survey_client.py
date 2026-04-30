@@ -34,6 +34,11 @@ class ClientAvailableAnswer(StrictModel):
 
 
 class ClientSegment(StrictModel):
+    point_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant technique du segment, utilisé pour envoyer un feedback.",
+        examples=["83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1"],
+    )
     text: str = Field(
         ...,
         description="Texte du segment produit par l'analyse.",
@@ -190,7 +195,9 @@ class ClientQuestionnaireInput(StrictModel):
         default_factory=dict,
         description="Métadonnées associées au questionnaire.",
     )
-
+    def get_client_id(self) -> Optional[str]:
+        value = self.metadata.get("client_id")
+        return str(value).strip() if value else None
 
 class ClientQuestionnaireAnalyzeRequest(StrictModel):
     questionnaires: List[ClientQuestionnaireInput] = Field(
@@ -215,6 +222,10 @@ class ClientQuestionnaireAnalyzeRequest(StrictModel):
 
 class ClientAnswerOutput(StrictModel):
     id: int = Field(..., description="Identifiant de la réponse.")
+    response_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant technique de la réponse analysée, utilisé pour envoyer un feedback.",
+    )
     segments: List[ClientSegment] = Field(
         default_factory=list,
         description="Segments d'analyse associés à cette réponse.",
@@ -263,6 +274,10 @@ class ClientMultipleChoiceQuestionOutput(StrictModel):
 
 class ClientQuestionWithSegmentsOutput(StrictModel):
     id: int = Field(..., description="Identifiant de la question.")
+    response_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant technique de la réponse analysée, utilisé pour envoyer un feedback.",
+    )
     segments: List[ClientSegment] = Field(
         default_factory=list,
         description="Segments produits directement au niveau de la question.",

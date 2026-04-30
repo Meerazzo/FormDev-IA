@@ -11,9 +11,11 @@ class PointFeedback(Base):
         Index("idx_point_feedback_response_id", "response_id"),
         Index("idx_point_feedback_point_id", "point_id"),
         Index("idx_point_feedback_created_at", "created_at"),
+        Index("idx_point_feedback_client_id", "client_id"),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
+    client_id = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     response_id = Column(Text, nullable=False)

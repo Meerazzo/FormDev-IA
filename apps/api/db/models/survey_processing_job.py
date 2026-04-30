@@ -13,6 +13,7 @@ class SurveyProcessingJob(Base):
         Index("idx_survey_processing_jobs_survey_id", "survey_id"),
         Index("idx_survey_processing_jobs_client_id", "client_id"),
         Index("idx_survey_processing_jobs_created_at", "created_at"),
+        Index("idx_survey_processing_jobs_request_id", "request_id"),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -22,7 +23,7 @@ class SurveyProcessingJob(Base):
     processing_id = Column(Text, nullable=False, unique=True)
     survey_id = Column(Text, nullable=False)
     client_id = Column(Text, nullable=True)
-
+    request_id = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="PENDING")  # PENDING / STARTED / FINISHED / FAILED
 
     request_payload_json = Column(JSONB, nullable=True)

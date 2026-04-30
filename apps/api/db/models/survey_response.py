@@ -12,9 +12,11 @@ class SurveyResponse(Base):
         Index("idx_survey_responses_question_id", "question_id"),
         Index("idx_survey_responses_response_id", "response_id"),
         Index("idx_survey_responses_created_at", "created_at"),
+        Index("idx_survey_responses_client_id", "client_id"),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
+    client_id = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     survey_id = Column(Text, nullable=False)

@@ -35,15 +35,21 @@ class SurveyClientAnalyzerService:
                 "source_format": "client_questionnaire_v1",
             }
 
-            if client_id and "client_id" not in analysis_metadata:
-                analysis_metadata["client_id"] = client_id
+            questionnaire_client_id = questionnaire_input.metadata.get("client_id")
+
+            effective_client_id = client_id or questionnaire_client_id
+
+            if not effective_client_id:
+                raise ValueError("metadata.client_id is required")
+
+            analysis_metadata["client_id"] = str(effective_client_id)
 
             result = await self.form_analyzer._analyze_form_payload(
                 survey_id=flat["survey_id"],
                 items=flat["items"],
                 metadata=analysis_metadata,
                 request_id=request_id,
-                client_id=client_id,
+                client_id=str(effective_client_id),
             )
 
             response_points_map = self._build_response_points_map(result)
@@ -143,6 +149,7 @@ class SurveyClientAnalyzerService:
 
             segments.append(
                 ClientSegment(
+                    point_id=point.get("point_id"),
                     text=point.get("text", ""),
                     sentiment=sentiment_map.get(point.get("sentiment", 3), "NEUTRAL"),
                     categoryId=category_id,
@@ -244,10 +251,16 @@ class SurveyClientAnalyzerService:
                 response_locator_map=response_locator_map,
                 response_points_map=response_points_map,
             )
-
+            key = (
+                str(questionnaire_id),
+                str(question.id),
+                str(answer.id),
+            )
+            response_id = response_locator_map.get(key)
             answers_output.append(
                 ClientAnswerOutput(
                     id=answer.id,
+                    response_id=response_id,
                     segments=self._map_segments(
                         points=points,
                         available_categories=available_categories,
@@ -281,9 +294,15 @@ class SurveyClientAnalyzerService:
                 response_locator_map=response_locator_map,
                 response_points_map=response_points_map,
             )
-
+            key = (
+                str(questionnaire_id),
+                str(question.id),
+                str(question.answer.id),
+            )
+            response_id = response_locator_map.get(key)
             answer_output = ClientAnswerOutput(
                 id=question.answer.id,
+                response_id=response_id,
                 segments=self._map_segments(
                     points=points,
                     available_categories=available_categories,
@@ -316,10 +335,16 @@ class SurveyClientAnalyzerService:
                 response_locator_map=response_locator_map,
                 response_points_map=response_points_map,
             )
-
+            key = (
+                str(questionnaire_id),
+                str(question.id),
+                str(answer.id),
+            )
+            response_id = response_locator_map.get(key)
             answers_output.append(
                 ClientAnswerOutput(
                     id=answer.id,
+                    response_id=response_id,
                     segments=self._map_segments(
                         points=points,
                         available_categories=available_categories,
@@ -350,9 +375,16 @@ class SurveyClientAnalyzerService:
             response_locator_map=response_locator_map,
             response_points_map=response_points_map,
         )
-
+        key = (
+            str(questionnaire_id),
+            str(question.id),
+            None,
+        )
+        response_id = response_locator_map.get(key)
+        
         return ClientQuestionWithSegmentsOutput(
             id=question.id,
+            response_id=response_id,
             segments=self._map_segments(
                 points=points,
                 available_categories=available_categories,
@@ -376,9 +408,16 @@ class SurveyClientAnalyzerService:
             response_locator_map=response_locator_map,
             response_points_map=response_points_map,
         )
+        key = (
+            str(questionnaire_id),
+            str(question.id),
+            None,
+        )
+        response_id = response_locator_map.get(key)
 
         return ClientQuestionWithSegmentsOutput(
             id=question.id,
+            response_id=response_id,
             segments=self._map_segments(
                 points=points,
                 available_categories=available_categories,

@@ -15,5 +15,5 @@ for item in $CASES; do
   out="$RESULTS_DIR/survey_conc_${conc}_total_${total}.txt"
   echo "===== SURVEY CONCURRENCY=$conc TOTAL=$total ====="
   BASE_URL="$BASE_URL" API_KEY="$API_KEY" CONCURRENCY="$conc" TOTAL="$total" \
-    python "$SCRIPT" | tee "$out"
+    python3 "$SCRIPT" | tee "$out"
 done

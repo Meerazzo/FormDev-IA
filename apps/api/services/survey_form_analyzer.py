@@ -77,6 +77,7 @@ class SurveyFormAnalyzerService:
         self,
         payload: ClientQuestionnaireAnalyzeRequest,
         client_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> SurveyProcessingJob:
         processing_id = str(uuid.uuid4())
 
@@ -84,6 +85,7 @@ class SurveyFormAnalyzerService:
             processing_id=processing_id,
             survey_id="client_questionnaires",
             client_id=client_id,
+            request_id=request_id,
             status="PENDING",
             request_payload_json=payload.model_dump(),
         )
@@ -246,7 +248,12 @@ class SurveyFormAnalyzerService:
         client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._validate_form_payload(items)
-        distinct_questions = self.question_selector.extract_distinct_questions(items)
+        open_items = [
+            item for item in items
+            if (item.get("metadata") or {}).get("question_type") == "OPEN"
+        ]
+
+        distinct_questions = self.question_selector.extract_distinct_questions(open_items)
         selection_result = await self.question_selector.select_questions_in_chunks(
             distinct_questions
         )

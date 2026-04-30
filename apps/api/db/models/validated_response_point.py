@@ -12,9 +12,11 @@ class ValidatedResponsePoint(Base):
         Index("idx_vrp_category", "final_category"),
         Index("idx_vrp_sentiment", "final_sentiment"),
         Index("idx_vrp_created_at", "created_at"),
+        Index("idx_vrp_client_id", "client_id"),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
+    client_id = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     response_id = Column(Text, nullable=False)

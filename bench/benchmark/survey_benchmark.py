@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
+CLIENT_ID = os.getenv("CLIENT_ID", "client_demo")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
 API_KEY = os.getenv("API_KEY", "")
 CONCURRENCY = int(os.getenv("CONCURRENCY", "5"))
@@ -22,6 +23,10 @@ PAYLOAD = {
     "questionnaires": [
         {
             "id": 1,
+            "metadata": {
+                "client_id": CLIENT_ID,
+                "formation": "Benchmark survey",
+            },
             "availableCategories": [
                 {"id": 10, "label": "Satisfaction", "metadata": {}},
                 {"id": 11, "label": "Amélioration", "metadata": {}},
@@ -90,9 +95,6 @@ PAYLOAD = {
                     "metadata": {},
                 },
             ],
-            "metadata": {
-                "formation": "Benchmark survey",
-            },
         }
     ]
 }
@@ -110,6 +112,7 @@ def one_job(index: int) -> dict:
         poll = requests.get(
             f"{BASE_URL}/surveys/processings/{processing_id}",
             headers={"X-API-Key": API_KEY},
+            params={"client_id": CLIENT_ID},
             timeout=60,
         )
         poll.raise_for_status()

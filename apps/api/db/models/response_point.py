@@ -12,9 +12,11 @@ class ResponsePoint(Base):
         Index("idx_response_points_category", "category"),
         Index("idx_response_points_sentiment", "sentiment"),
         Index("idx_response_points_created_at", "created_at"),
+        Index("idx_response_points_client_id", "client_id"),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
+    client_id = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     point_id = Column(Text, nullable=False, unique=True)

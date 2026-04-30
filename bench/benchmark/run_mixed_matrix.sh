@@ -21,7 +21,7 @@ for item in $CASES; do
   echo "===== MIXED CHAT_VUS=$chat_vus SURVEY_CONC=$survey_conc SURVEY_TOTAL=$survey_total ====="
 
   BASE_URL="$BASE_URL" API_KEY="$API_KEY" CONCURRENCY="$survey_conc" TOTAL="$survey_total" \
-    python "$SURVEY_SCRIPT" > "$survey_out" 2>&1 &
+    python3 "$SURVEY_SCRIPT" > "$survey_out" 2>&1 &
   survey_pid=$!
 
   sleep 3

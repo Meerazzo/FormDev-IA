@@ -3,12 +3,13 @@ from typing import Any, Dict, Optional
 import logging
 
 from core.config import settings
+from db.models.survey_processing_job import SurveyProcessingJob
 from db.models.point_feedback import PointFeedback
 from db.models.response_point import ResponsePoint
 from db.models.survey_response import SurveyResponse
 from db.models.validated_response_point import ValidatedResponsePoint
 from services.survey_example_memory import SurveyExampleMemoryService
-
+from sqlalchemy.orm.attributes import flag_modified
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +46,148 @@ class SurveyFeedbackService:
             )
             .first()
         )
+    def _get_processing_job_for_response(self, response: SurveyResponse) -> Optional[SurveyProcessingJob]:
+        metadata = response.metadata_json or {}
+        client_id = metadata.get("client_id")
 
+        query = self.db.query(SurveyProcessingJob).filter(
+            SurveyProcessingJob.survey_id == "client_questionnaires",
+            SurveyProcessingJob.status == "FINISHED",
+        )
+
+        if client_id:
+            query = query.filter(SurveyProcessingJob.client_id == client_id)
+
+        # On prend le job le plus récent qui contient ce response_id dans son result_json
+        jobs = query.order_by(SurveyProcessingJob.finished_at.desc()).limit(20).all()
+
+        for job in jobs:
+            if self._json_contains_response_id(job.result_json or {}, response.response_id):
+                return job
+
+        return None
+
+
+    def _json_contains_response_id(self, data: Dict[str, Any], response_id: str) -> bool:
+        questionnaires = (data or {}).get("questionnaires", [])
+
+        for questionnaire in questionnaires:
+            for question in questionnaire.get("questions", []):
+                if question.get("response_id") == response_id:
+                    return True
+
+                answer = question.get("answer")
+                if isinstance(answer, dict) and answer.get("response_id") == response_id:
+                    return True
+
+                for ans in question.get("answers", []) or []:
+                    if ans.get("response_id") == response_id:
+                        return True
+
+        return False
+
+
+    def _segments_from_validated_points(self, response_id: str) -> list[dict[str, Any]]:
+        points = (
+            self.db.query(ValidatedResponsePoint)
+            .filter(
+                ValidatedResponsePoint.response_id == response_id,
+                ValidatedResponsePoint.is_active == "true",
+            )
+            .all()
+        )
+
+        sentiment_map = {
+            1: "VERY_NEGATIVE",
+            2: "NEGATIVE",
+            3: "NEUTRAL",
+            4: "POSITIVE",
+            5: "VERY_POSITIVE",
+        }
+
+        segments = []
+        for point in points:
+            segments.append(
+                {
+                    "text": point.final_text,
+                    "point_id": point.point_id,
+                    "sentiment": sentiment_map.get(point.final_sentiment, "NEUTRAL"),
+                    # on ne peut pas retrouver proprement categoryId ici sans availableCategories,
+                    # il sera résolu dans _replace_segments_in_result_json
+                    "category_label": point.final_category,
+                }
+            )
+
+        return segments
+
+
+    def _category_id_by_label(self, questionnaire: Dict[str, Any]) -> Dict[str, int]:
+        return {
+            str(category.get("label")): category.get("id")
+            for category in questionnaire.get("availableCategories", [])
+            if category.get("label") is not None
+        }
+
+
+    def _replace_segments_in_result_json(
+        self,
+        data: Dict[str, Any],
+        response_id: str,
+        new_segments: list[dict[str, Any]],
+    ) -> Dict[str, Any]:
+        for questionnaire in data.get("questionnaires", []):
+            category_map = self._category_id_by_label(questionnaire)
+
+            final_segments = []
+            for segment in new_segments:
+                category_label = segment.get("category_label")
+                final_segments.append({
+                    "text": segment.get("text", ""),
+                    "point_id": segment.get("point_id"),
+                    "sentiment": segment.get("sentiment", "NEUTRAL"),
+                    "categoryId": category_map.get(category_label, 0),
+                })
+
+            for question in questionnaire.get("questions", []):
+                if question.get("response_id") == response_id:
+                    question["segments"] = final_segments
+                    return data
+
+                answer = question.get("answer")
+                if isinstance(answer, dict) and answer.get("response_id") == response_id:
+                    answer["segments"] = final_segments
+                    return data
+
+                for ans in question.get("answers", []) or []:
+                    if ans.get("response_id") == response_id:
+                        ans["segments"] = final_segments
+                        return data
+
+        return data
+
+
+    def _sync_processing_result_json(self, response_id: str) -> None:
+        from sqlalchemy.orm.attributes import flag_modified
+
+        survey_response = self._get_survey_response(response_id)
+        if not survey_response:
+            return
+
+        job = self._get_processing_job_for_response(survey_response)
+        if not job or not job.result_json:
+            return
+
+        new_segments = self._segments_from_validated_points(response_id)
+
+        updated_json = self._replace_segments_in_result_json(
+            data=job.result_json,
+            response_id=response_id,
+            new_segments=new_segments,
+        )
+
+        job.result_json = updated_json
+        flag_modified(job, "result_json")
+        
     def _get_survey_response(self, response_id: str) -> Optional[SurveyResponse]:
         return (
             self.db.query(SurveyResponse)
@@ -59,10 +201,21 @@ class SurveyFeedbackService:
         points: list[Dict[str, Any]],
         operator_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         saved_count = 0
 
         survey_response = self._get_survey_response(response_id)
+        if not survey_response:
+            raise ValueError("Survey response not found")
+
+        response_client_id = (
+            getattr(survey_response, "client_id", None)
+            or (survey_response.metadata_json or {}).get("client_id")
+        )
+
+        if client_id and response_client_id != client_id:
+            raise ValueError("Response does not belong to this client_id")
         response_metadata = survey_response.metadata_json if survey_response else {}
 
         enriched_metadata = {
@@ -120,7 +273,7 @@ class SurveyFeedbackService:
                 )
 
             saved_count += 1
-
+        self._sync_processing_result_json(response_id=response_id)
         self.db.commit()
 
         return {

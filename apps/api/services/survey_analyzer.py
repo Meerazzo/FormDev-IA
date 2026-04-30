@@ -62,7 +62,29 @@ class SurveyAnalyzerService:
     @staticmethod
     def _build_structured_classification_system_prompt(
         allowed_categories: List[str],
+        few_shot_examples: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
+            few_shot_block = ""
+            if few_shot_examples:
+                examples_lines = [
+                    "Exemples validés pour ce client :",
+                    "",
+                ]
+
+                for idx, example in enumerate(few_shot_examples, start=1):
+                    examples_lines.extend(
+                        [
+                            f"Exemple {idx} :",
+                            f"- Question : {example.get('question_text')}",
+                            f"- Réponse analysée : {example.get('input_point_text')}",
+                            f"- Texte final attendu : {example.get('final_text')}",
+                            f"- Sentiment attendu : {example.get('final_sentiment')}",
+                            f"- Catégorie attendue : {example.get('final_category')}",
+                            "",
+                        ]
+                    )
+
+                few_shot_block = "\n".join(examples_lines)
         return f"""
     Tu analyses une réponse à une question fermée issue d'un questionnaire.
 
@@ -117,6 +139,15 @@ class SurveyAnalyzerService:
 
     Catégories autorisées uniquement :
     {allowed_categories}
+
+    {few_shot_block}
+
+    Règles d'utilisation des exemples :
+    - les exemples représentent des corrections ou validations opérateur précédentes
+    - utilise-les comme référence de style, de sentiment et de catégorisation
+    - ne copie jamais un exemple si la question ou la réponse actuelle est différente
+    - respecte toujours la liste des catégories autorisées
+    - si aucun exemple n'est pertinent, applique les règles générales
 
     Format de sortie strict :
     {{"text": "...", "sentiment": 1|2|3|4|5, "category": "...", "confidence": null}}
@@ -410,7 +441,12 @@ class SurveyAnalyzerService:
         source_endpoint: str = "/surveys/forms/analyze",
     ) -> Dict[str, Any]:
         allowed_categories = self._get_allowed_categories(metadata)
-
+        few_shot_examples = self._get_few_shot_examples(
+            question_text=question_text,
+            point_text=point_text,
+            metadata=metadata,
+            limit=3,
+        )
         structured_payload = {
             "question_type": (metadata or {}).get("question_type"),
             "question_text": question_text,
@@ -428,7 +464,8 @@ class SurveyAnalyzerService:
             {
                 "role": "system",
                 "content": self._build_structured_classification_system_prompt(
-                    allowed_categories
+                    allowed_categories,
+                    few_shot_examples=few_shot_examples,
                 ),
             },
             {
@@ -452,6 +489,7 @@ class SurveyAnalyzerService:
                 "question_text": question_text,
                 "point_text": point_text,
                 "stage": "structured_classification",
+                "few_shot_count": len(few_shot_examples),
             },
         )
 
@@ -491,7 +529,7 @@ class SurveyAnalyzerService:
 
         analysis_metadata = {
             **(metadata or {}),
-            "client_id": (metadata or {}).get("client_id") or client_id,
+            "client_id": client_id or (metadata or {}).get("client_id"),
             "response_kind": pre["response_kind"],
             "skip_reason": pre["skip_reason"],
             "question_kind": pre["question_kind"],

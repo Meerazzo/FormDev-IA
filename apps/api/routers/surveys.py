@@ -158,6 +158,7 @@ async def analyze_surveys(
                                 }
                             ],
                             "metadata": {
+                                "client_id": "client_demo",
                                 "formation": "Questionnaire complet nominal"
                             }
                         }
@@ -196,6 +197,7 @@ async def analyze_surveys(
                                 }
                             ],
                             "metadata": {
+                                "client_id": "client_demo",
                                 "formation": "Questionnaire partiel"
                             }
                         }
@@ -207,7 +209,27 @@ async def analyze_surveys(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ): 
-    _, client_id = authenticate(api_key)
+    authenticate(api_key)
+
+    client_ids = {
+        questionnaire.get_client_id()
+        for questionnaire in payload.questionnaires
+        if questionnaire.get_client_id()
+    }
+
+    if not client_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="metadata.client_id is required on each questionnaire",
+        )
+
+    if len(client_ids) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="All questionnaires in the same request must use the same metadata.client_id",
+        )
+
+    client_id = next(iter(client_ids))
     req_id = getattr(request.state, "request_id", None)
 
     service = SurveyFormAnalyzerService(
@@ -219,11 +241,13 @@ async def analyze_surveys(
         job = service.create_client_processing_job(
             payload=payload,
             client_id=client_id,
+            request_id=req_id,
         )
+
+        enqueue_survey_job(job.processing_id, request_id=req_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    enqueue_survey_job(job.processing_id)
 
     return {
         "processing_id": job.processing_id,
@@ -257,17 +281,21 @@ Quand le statut est `FINISHED`, le champ `result` contient la sortie finale d'an
 async def get_processing_status(
     request: Request,
     processing_id: str,
+    client_id: str,
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ):
-    _, client_id = authenticate(api_key)
+    authenticate(api_key)
 
     service = SurveyFormAnalyzerService(
         vllm_client=VLLMClient(),
         db=db,
     )
 
-    job = service.get_processing_job(processing_id=processing_id, client_id=client_id)
+    job = service.get_processing_job(
+        processing_id=processing_id,
+        client_id=client_id,
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Processing not found")
 
@@ -308,6 +336,7 @@ L'API :
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def save_survey_feedback(
     request: Request,
+    client_id: str,
     payload: SurveyFeedbackRequest = Body(
         ...,
         openapi_examples={
@@ -382,11 +411,14 @@ async def save_survey_feedback(
     authenticate(api_key)
 
     service = SurveyFeedbackService(db=db)
-
-    return service.save_feedback(
-        response_id=payload.response_id,
-        points=[point.model_dump() for point in payload.points],
-        operator_id=payload.operator_id,
-        metadata=payload.metadata,
-    )
+    try:
+        return service.save_feedback(
+            response_id=payload.response_id,
+            points=[point.model_dump() for point in payload.points],
+            operator_id=payload.operator_id,
+            metadata=payload.metadata,
+            client_id=client_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 

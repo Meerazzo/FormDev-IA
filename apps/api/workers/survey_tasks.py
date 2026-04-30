@@ -8,7 +8,7 @@ from services.vllm_client import VLLMClient
 logger = logging.getLogger(__name__)
 
 
-def process_survey_job(processing_id: str) -> None:
+def process_survey_job(processing_id: str, request_id: str | None = None) -> None:
     """
     Tâche RQ exécutée par le worker survey.
     Charge le job depuis PostgreSQL puis lance le traitement complet.
@@ -27,7 +27,7 @@ def process_survey_job(processing_id: str) -> None:
         asyncio.run(
             service.run_client_processing_job(
                 processing_id=processing_id,
-                request_id=None,
+                request_id=request_id,
             )
         )
 

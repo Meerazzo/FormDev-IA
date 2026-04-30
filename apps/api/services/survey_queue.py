@@ -21,7 +21,7 @@ def get_survey_queue() -> Queue:
     )
 
 
-def enqueue_survey_job(processing_id: str) -> str:
+def enqueue_survey_job(processing_id: str, request_id: str | None = None) -> str:
     """
     Enfile un traitement d'analyse survey dans la queue RQ.
     Retourne l'identifiant du job RQ.
@@ -30,6 +30,7 @@ def enqueue_survey_job(processing_id: str) -> str:
     job = queue.enqueue(
         process_survey_job,
         processing_id,
+        request_id,
         result_ttl=settings.RQ_RESULT_TTL,
         failure_ttl=settings.RQ_FAILURE_TTL,
     )
