@@ -55,9 +55,9 @@ class ClientSegment(StrictModel):
         description="Sentiment métier du segment.",
         examples=["NEGATIVE"],
     )
-    categoryId: int = Field(
-        ...,
-        description="Identifiant de la catégorie associée au segment.",
+    categoryId: Optional[int] = Field(
+        default=None,
+        description="Identifiant de la catégorie associée au segment. Null si la question n'a pas été analysée.",
         examples=[11],
     )
 

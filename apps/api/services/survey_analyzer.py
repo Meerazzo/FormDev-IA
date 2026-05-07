@@ -247,9 +247,10 @@ class SurveyAnalyzerService:
         response_id: str,
         point_id: str,
         text: str,
-        sentiment: int,
-        category: str,
+        sentiment: Optional[int],
+        category: Optional[str],
         confidence: Optional[float],
+        source: str = "model",
     ) -> ResponsePoint:
         return ResponsePoint(
             point_id=point_id,
@@ -258,7 +259,7 @@ class SurveyAnalyzerService:
             sentiment=sentiment,
             category=category,
             confidence=confidence,
-            source="model",
+            source=source,
             is_active="true",
             pipeline_name=self.PIPELINE_NAME,
             pipeline_version=self.PIPELINE_VERSION,
@@ -306,6 +307,25 @@ class SurveyAnalyzerService:
             ],
         }
 
+    def _build_not_analyzed_result(
+        self,
+        response_id: str,
+        text: str,
+    ) -> Dict[str, Any]:
+        return {
+            "response_id": response_id,
+            "points": [
+                {
+                    "point_id": f"{response_id}_pt_1",
+                    "text": self._normalize_text(text),
+                    "sentiment": 3,
+                    "category": None,
+                    "confidence": None,
+                    "source": "not_analyzed",
+                }
+            ],
+        }
+
     def _save_point(
         self,
         response_id: str,
@@ -321,9 +341,10 @@ class SurveyAnalyzerService:
                 response_id=response_id,
                 point_id=point["point_id"],
                 text=point["text"],
-                sentiment=point["sentiment"],
-                category=point["category"],
-                confidence=point["confidence"],
+                sentiment=point.get("sentiment"),
+                category=point.get("category"),
+                confidence=point.get("confidence"),
+                source=point.get("source", "model"),
             )
         )
 
@@ -332,9 +353,9 @@ class SurveyAnalyzerService:
                 response_id=response_id,
                 point_id=point["point_id"],
                 text=point["text"],
-                sentiment=point["sentiment"],
-                category=point["category"],
-                source="model",
+                sentiment=point.get("sentiment"),
+                category=point.get("category"),
+                source=point.get("source", "model"),
             )
         )
 
@@ -580,9 +601,16 @@ class SurveyAnalyzerService:
         self.db.flush()
 
         if bool(analysis_metadata.get("force_ignore")):
-            self._finalize_response(response)
-            return {"response_id": response_id, "points": []}
+            result = self._build_not_analyzed_result(
+                response_id=response_id,
+                text=normalized_response_text,
+            )
 
+            self._save_point(response_id, result["points"][0])
+            self._finalize_response(response)
+
+            return result
+        
         if not pre["should_analyze"] and not (skip_segmentation and is_structured_question):
             self._finalize_response(response)
             return {"response_id": response_id, "points": []}

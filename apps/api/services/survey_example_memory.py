@@ -71,6 +71,86 @@ class SurveyExampleMemoryService:
             except Exception:
                 pass
 
+    def list_feedback_examples(
+        self,
+        *,
+        client_id: str,
+        limit: int = 50,
+        question_type: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Liste les exemples actifs stockés dans Qdrant pour un client.
+
+        Utilisé par GET /surveys/feedback.
+        """
+        self.ensure_collection()
+
+        safe_limit = max(1, min(limit, 200))
+
+        must_conditions: List[models.Condition] = [
+            models.FieldCondition(
+                key="client_id",
+                match=models.MatchValue(value=client_id),
+            ),
+            models.FieldCondition(
+                key="is_active",
+                match=models.MatchValue(value=True),
+            ),
+        ]
+
+        if question_type:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="question_type",
+                    match=models.MatchValue(value=question_type),
+                )
+            )
+
+        if category:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="final_category",
+                    match=models.MatchValue(value=category),
+                )
+            )
+
+        results, _ = self.client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=models.Filter(must=must_conditions),
+            with_payload=True,
+            limit=safe_limit,
+        )
+
+        examples: List[Dict[str, Any]] = []
+
+        for item in results:
+            payload = item.payload or {}
+            examples.append(
+                {
+                    "id": str(item.id),
+                    "client_id": payload.get("client_id"),
+                    "question_text": payload.get("question_text"),
+                    "input_point_text": payload.get("input_point_text"),
+                    "final_text": payload.get("final_text"),
+                    "final_sentiment": payload.get("final_sentiment"),
+                    "final_category": payload.get("final_category"),
+                    "question_type": payload.get("question_type"),
+                    "example_type": payload.get("example_type"),
+                    "response_id": payload.get("response_id"),
+                    "point_id": payload.get("point_id"),
+                    "created_at": payload.get("created_at"),
+                    "is_active": payload.get("is_active"),
+                }
+            )
+
+        examples.sort(
+            key=lambda item: item.get("created_at") or "",
+            reverse=True,
+        )
+
+        return examples
+
     @staticmethod
     def _normalize_exact(value: Optional[str]) -> str:
         if not value:

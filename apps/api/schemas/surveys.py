@@ -170,10 +170,30 @@ class SurveyProcessingCreateResponse(StrictModel):
     )
     status: str = Field(
         ...,
-        description="Statut initial du traitement, généralement PENDING juste après la création.",
-        examples=["PENDING"],
+        description="Statut initial du traitement : RECEIVED si enregistré mais non enfilé, ou QUEUED si envoyé dans Redis/RQ.",
+        examples=["QUEUED"],
     )
 
+class SurveyFeedbackExample(StrictModel):
+    id: str
+    client_id: Optional[str] = None
+    question_text: Optional[str] = None
+    input_point_text: Optional[str] = None
+    final_text: Optional[str] = None
+    final_sentiment: Optional[int] = None
+    final_category: Optional[str] = None
+    question_type: Optional[str] = None
+    example_type: Optional[str] = None
+    response_id: Optional[str] = None
+    point_id: Optional[str] = None
+    created_at: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class SurveyFeedbackListResponse(StrictModel):
+    client_id: str
+    count: int
+    items: List[SurveyFeedbackExample]
 
 class SurveyProcessingStatusResponse(StrictModel):
     processing_id: str = Field(
@@ -183,7 +203,7 @@ class SurveyProcessingStatusResponse(StrictModel):
     )
     status: str = Field(
         ...,
-        description="Statut courant du traitement : PENDING, STARTED, FINISHED ou FAILED.",
+        description="Statut courant du traitement : RECEIVED, QUEUED, STARTED, FINISHED ou FAILED.",
         examples=["FINISHED"],
     )
     survey_id: Optional[str] = Field(

@@ -73,6 +73,56 @@ class SurveyFormAnalyzerService:
 
         return mapping
 
+    def mark_processing_job_queued(
+        self,
+        processing_id: str,
+        rq_job_id: Optional[str] = None,
+    ) -> Optional[SurveyProcessingJob]:
+        job = (
+            self.db.query(SurveyProcessingJob)
+            .filter(SurveyProcessingJob.processing_id == processing_id)
+            .first()
+        )
+
+        if not job:
+            return None
+
+        job.status = "QUEUED"
+
+        metadata = job.request_payload_json or {}
+        metadata["_queue"] = {
+            "rq_job_id": rq_job_id,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        job.request_payload_json = metadata
+
+        self.db.commit()
+        self.db.refresh(job)
+
+        return job
+
+    def mark_processing_job_enqueue_failed(
+        self,
+        processing_id: str,
+        error_message: str,
+    ) -> Optional[SurveyProcessingJob]:
+        job = (
+            self.db.query(SurveyProcessingJob)
+            .filter(SurveyProcessingJob.processing_id == processing_id)
+            .first()
+        )
+
+        if not job:
+            return None
+
+        job.status = "RECEIVED"
+        job.error_message = error_message
+
+        self.db.commit()
+        self.db.refresh(job)
+
+        return job
+
     def create_client_processing_job(
         self,
         payload: ClientQuestionnaireAnalyzeRequest,
@@ -86,7 +136,7 @@ class SurveyFormAnalyzerService:
             survey_id="client_questionnaires",
             client_id=client_id,
             request_id=request_id,
-            status="PENDING",
+            status="RECEIVED",
             request_payload_json=payload.model_dump(),
         )
 
@@ -117,7 +167,7 @@ class SurveyFormAnalyzerService:
             processing_id=processing_id,
             survey_id=survey_id,
             client_id=client_id,
-            status="PENDING",
+            status="RECEIVED",
             request_payload_json={
                 "survey_id": survey_id,
                 "items": items,
@@ -334,7 +384,7 @@ class SurveyFormAnalyzerService:
                         "question_id": question_id,
                         "question_text": question_text,
                         "selection_decision": "ignore",
-                        "points": [],
+                        "points": ignored["points"],
                     }
                 )
 

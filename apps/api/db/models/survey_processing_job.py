@@ -24,7 +24,7 @@ class SurveyProcessingJob(Base):
     survey_id = Column(Text, nullable=False)
     client_id = Column(Text, nullable=True)
     request_id = Column(Text, nullable=True)
-    status = Column(Text, nullable=False, default="PENDING")  # PENDING / STARTED / FINISHED / FAILED
+    status = Column(Text, nullable=False, default="RECEIVED")  # RECEIVED / QUEUED / STARTED / FINISHED / FAILED
 
     request_payload_json = Column(JSONB, nullable=True)
     result_json = Column(JSONB, nullable=True)

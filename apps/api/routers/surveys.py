@@ -18,6 +18,7 @@ from core.rate_limit import limiter
 from core.security import authenticate
 from db.session import get_db
 from schemas.surveys import (
+    SurveyFeedbackListResponse,
     SurveyFeedbackRequest,
     SurveyFeedbackResponse,
     SurveyProcessingCreateResponse,
@@ -28,6 +29,7 @@ from services.survey_feedback import SurveyFeedbackService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
 from services.vllm_client import VLLMClient
 from services.survey_queue import enqueue_survey_job
+from services.survey_example_memory import SurveyExampleMemoryService
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
@@ -244,7 +246,23 @@ async def analyze_surveys(
             request_id=req_id,
         )
 
-        enqueue_survey_job(job.processing_id, request_id=req_id)
+        try:
+            rq_job_id = enqueue_survey_job(job.processing_id, request_id=req_id)
+        except Exception as e:
+            service.mark_processing_job_enqueue_failed(
+                processing_id=job.processing_id,
+                error_message=f"Queue enqueue failed: {str(e)}",
+            )
+            return {
+                "processing_id": job.processing_id,
+                "status": "RECEIVED",
+            }
+
+        job = service.mark_processing_job_queued(
+            processing_id=job.processing_id,
+            rq_job_id=rq_job_id,
+        )
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -263,8 +281,9 @@ async def analyze_surveys(
 Retourne l'état d'un traitement d'analyse précédemment créé via `POST /surveys/analyze`.
 
 ### Statuts possibles
-- `PENDING` : traitement enregistré mais pas encore démarré
-- `STARTED` : traitement en cours d'exécution
+- `RECEIVED` : traitement reçu par FastAPI et enregistré en base
+- `QUEUED` : traitement envoyé dans Redis/RQ
+- `STARTED` : traitement pris par un worker
 - `FINISHED` : traitement terminé avec succès
 - `FAILED` : traitement terminé en erreur
 
@@ -422,3 +441,51 @@ async def save_survey_feedback(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
+
+@router.get(
+    "/feedback",
+    response_model=SurveyFeedbackListResponse,
+    summary="Lister les corrections/mémoires de feedback d'un client",
+    description="""
+Retourne les exemples actifs stockés dans Qdrant pour un client.
+
+Cette route lit la mémoire vectorielle utilisée pour l'apprentissage dynamique.
+Elle ne lit pas PostgreSQL.
+""",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_survey_feedback(
+    request: Request,
+    client_id: str,
+    limit: int = 50,
+    question_type: str | None = None,
+    category: str | None = None,
+    api_key: str | None = Security(api_key_header),
+):
+    authenticate(api_key)
+
+    memory = SurveyExampleMemoryService(
+        qdrant_url=settings.QDRANT_URL,
+        collection_name=settings.QDRANT_COLLECTION,
+        embedding_model=settings.QDRANT_EMBEDDING_MODEL,
+        vector_size=settings.QDRANT_VECTOR_SIZE,
+    )
+
+    try:
+        items = memory.list_feedback_examples(
+            client_id=client_id,
+            limit=limit,
+            question_type=question_type,
+            category=category,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to read feedback memory: {str(e)}",
+        ) from e
+
+    return {
+        "client_id": client_id,
+        "count": len(items),
+        "items": items,
+    }

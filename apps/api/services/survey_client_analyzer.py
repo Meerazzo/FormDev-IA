@@ -145,7 +145,11 @@ class SurveyClientAnalyzerService:
         segments: List[ClientSegment] = []
         for point in points:
             category_label = point.get("category")
-            category_id = category_id_by_label.get(category_label, fallback_category_id)
+
+            if category_label is None:
+                category_id = None
+            else:
+                category_id = category_id_by_label.get(category_label, fallback_category_id)
 
             segments.append(
                 ClientSegment(
