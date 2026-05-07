@@ -348,6 +348,30 @@ class SurveyFeedbackService:
                 )
             )
 
+    def _get_memory_input_point_text(
+        self,
+        *,
+        response_id: str,
+        metadata: Optional[Dict[str, Any]],
+        existing_point: Optional[ResponsePoint],
+        item: Dict[str, Any],
+    ) -> Optional[str]:
+        question_type = (metadata or {}).get("question_type")
+        survey_response = self._get_survey_response(response_id)
+
+        if question_type in {"SINGLE_CHOICE", "MULTIPLE_CHOICE", "RATING", "CHECKBOX"}:
+            if survey_response and survey_response.response_text:
+                return survey_response.response_text
+
+        if existing_point:
+            return existing_point.point_text
+
+        corrected_text = (item.get("corrected_text") or "").strip()
+        if corrected_text:
+            return corrected_text
+
+        return None
+
     def _push_feedback_example_to_memory(
         self,
         *,
@@ -365,12 +389,20 @@ class SurveyFeedbackService:
 
         action = self._normalize_action(item.get("action"))
         is_correct = bool(item.get("is_correct", False))
+        memory_input_text = self._get_memory_input_point_text(
+            response_id=response_id,
+            metadata=metadata,
+            existing_point=existing_point,
+            item=item,
+        )
 
+        if not memory_input_text:
+            return
         if action == "delete" and existing_point:
             self.example_memory.deactivate_example(
                 response_id=response_id,
                 point_id=item.get("point_id"),
-                input_point_text=existing_point.point_text,
+                input_point_text=memory_input_text,
             )
             return
 
@@ -385,7 +417,7 @@ class SurveyFeedbackService:
                 self.example_memory.upsert_example(
                     client_id=client_id,
                     question_text=question_text,
-                    input_point_text=existing_point.point_text,
+                    input_point_text=memory_input_text,
                     final_text=existing_point.point_text,
                     final_sentiment=existing_point.sentiment,
                     final_category=existing_point.category,
@@ -408,7 +440,7 @@ class SurveyFeedbackService:
             self.example_memory.upsert_example(
                 client_id=client_id,
                 question_text=question_text,
-                input_point_text=existing_point.point_text,
+                input_point_text=memory_input_text,
                 final_text=final_text,
                 final_sentiment=final_sentiment,
                 final_category=final_category,
@@ -424,10 +456,15 @@ class SurveyFeedbackService:
             if not corrected_text:
                 return
 
+            if question_type in {"SINGLE_CHOICE", "MULTIPLE_CHOICE", "RATING", "CHECKBOX"}:
+                input_point_text = memory_input_text
+            else:
+                input_point_text = corrected_text
+
             self.example_memory.upsert_example(
                 client_id=client_id,
                 question_text=question_text,
-                input_point_text=corrected_text,
+                input_point_text=input_point_text,
                 final_text=corrected_text,
                 final_sentiment=item.get("corrected_sentiment"),
                 final_category=item.get("corrected_category"),

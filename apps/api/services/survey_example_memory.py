@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+from datetime import datetime, timezone
 
 
 class SurveyExampleMemoryService:
@@ -40,44 +41,41 @@ class SurveyExampleMemoryService:
     def ensure_collection(self) -> None:
         """
         Crée la collection Qdrant si elle n'existe pas encore.
-        Crée également les index de payload utiles aux filtres.
+        Tente aussi de créer les index utiles, même si la collection existe déjà.
         """
-        if self.client.collection_exists(self.collection_name):
-            return
 
-        self.client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=models.VectorParams(
-                size=self.vector_size,
-                distance=models.Distance.COSINE,
-            ),
-        )
+        if not self.client.collection_exists(self.collection_name):
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=self.vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
 
-        self.client.create_payload_index(
-            collection_name=self.collection_name,
-            field_name="client_id",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-        self.client.create_payload_index(
-            collection_name=self.collection_name,
-            field_name="example_type",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-        self.client.create_payload_index(
-            collection_name=self.collection_name,
-            field_name="final_category",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-        self.client.create_payload_index(
-            collection_name=self.collection_name,
-            field_name="question_type",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-        self.client.create_payload_index(
-            collection_name=self.collection_name,
-            field_name="is_active",
-            field_schema=models.PayloadSchemaType.BOOL,
-        )
+        for field_name, field_schema in [
+            ("client_id", models.PayloadSchemaType.KEYWORD),
+            ("example_type", models.PayloadSchemaType.KEYWORD),
+            ("final_category", models.PayloadSchemaType.KEYWORD),
+            ("question_type", models.PayloadSchemaType.KEYWORD),
+            ("is_active", models.PayloadSchemaType.BOOL),
+            ("question_text_norm", models.PayloadSchemaType.KEYWORD),
+            ("input_point_text_norm", models.PayloadSchemaType.KEYWORD),
+        ]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field_name,
+                    field_schema=field_schema,
+                )
+            except Exception:
+                pass
+
+    @staticmethod
+    def _normalize_exact(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        return " ".join(value.strip().lower().split())
 
     @staticmethod
     def build_document(question_text: str, input_point_text: str) -> str:
@@ -119,6 +117,89 @@ class SurveyExampleMemoryService:
 
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, stable_key))
 
+    def search_exact_example(
+        self,
+        *,
+        client_id: str,
+        question_text: str,
+        input_point_text: str,
+        question_type: Optional[str] = None,
+        allowed_categories: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        self.ensure_collection()
+
+        must_conditions: List[models.Condition] = [
+            models.FieldCondition(
+                key="client_id",
+                match=models.MatchValue(value=client_id),
+            ),
+            models.FieldCondition(
+                key="is_active",
+                match=models.MatchValue(value=True),
+            ),
+            models.FieldCondition(
+                key="question_text_norm",
+                match=models.MatchValue(value=self._normalize_exact(question_text)),
+            ),
+            models.FieldCondition(
+                key="input_point_text_norm",
+                match=models.MatchValue(value=self._normalize_exact(input_point_text)),
+            ),
+        ]
+
+        if question_type:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="question_type",
+                    match=models.MatchValue(value=question_type),
+                )
+            )
+
+        if allowed_categories:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="final_category",
+                    match=models.MatchAny(any=allowed_categories),
+                )
+            )
+
+        results, _ = self.client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=models.Filter(must=must_conditions),
+            with_payload=True,
+            limit=20,
+        )
+
+        if not results:
+            return None
+
+        examples = [item.payload or {} for item in results]
+
+        def sort_key(payload: Dict[str, Any]) -> tuple:
+            priority = {
+                "operator_corrected": 3,
+                "operator_validated": 2,
+                "operator_added": 1,
+            }.get(payload.get("example_type"), 0)
+
+            created_at = payload.get("created_at") or ""
+
+            return (priority, created_at)
+
+        best = sorted(examples, key=sort_key, reverse=True)[0]
+
+        return {
+            "question_text": best.get("question_text"),
+            "input_point_text": best.get("input_point_text"),
+            "final_text": best.get("final_text"),
+            "final_sentiment": best.get("final_sentiment"),
+            "final_category": best.get("final_category"),
+            "question_type": best.get("question_type"),
+            "example_type": best.get("example_type"),
+            "response_id": best.get("response_id"),
+            "point_id": best.get("point_id"),
+        }
+
     def upsert_example(
         self,
         *,
@@ -149,7 +230,9 @@ class SurveyExampleMemoryService:
         payload: Dict[str, Any] = {
             "client_id": client_id,
             "question_text": question_text,
+            "question_text_norm": self._normalize_exact(question_text),
             "input_point_text": input_point_text,
+            "input_point_text_norm": self._normalize_exact(input_point_text),
             "final_text": final_text,
             "final_sentiment": final_sentiment,
             "final_category": final_category,
@@ -158,6 +241,7 @@ class SurveyExampleMemoryService:
             "response_id": response_id,
             "point_id": point_id,
             "is_active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         self.client.upsert(

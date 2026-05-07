@@ -64,27 +64,27 @@ class SurveyAnalyzerService:
         allowed_categories: List[str],
         few_shot_examples: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-            few_shot_block = ""
-            if few_shot_examples:
-                examples_lines = [
-                    "Exemples validés pour ce client :",
-                    "",
-                ]
+        few_shot_block = ""
+        if few_shot_examples:
+            examples_lines = [
+                "Exemples validés pour ce client :",
+                "",
+            ]
 
-                for idx, example in enumerate(few_shot_examples, start=1):
-                    examples_lines.extend(
-                        [
-                            f"Exemple {idx} :",
-                            f"- Question : {example.get('question_text')}",
-                            f"- Réponse analysée : {example.get('input_point_text')}",
-                            f"- Texte final attendu : {example.get('final_text')}",
-                            f"- Sentiment attendu : {example.get('final_sentiment')}",
-                            f"- Catégorie attendue : {example.get('final_category')}",
-                            "",
-                        ]
-                    )
+            for idx, example in enumerate(few_shot_examples, start=1):
+                examples_lines.extend(
+                    [
+                        f"Exemple {idx} :",
+                        f"- Question : {example.get('question_text')}",
+                        f"- Réponse analysée : {example.get('input_point_text')}",
+                        f"- Texte final attendu : {example.get('final_text')}",
+                        f"- Sentiment attendu : {example.get('final_sentiment')}",
+                        f"- Catégorie attendue : {example.get('final_category')}",
+                        "",
+                    ]
+                )
 
-                few_shot_block = "\n".join(examples_lines)
+            few_shot_block = "\n".join(examples_lines)
         return f"""
     Tu analyses une réponse à une question fermée issue d'un questionnaire.
 
@@ -441,11 +441,42 @@ class SurveyAnalyzerService:
         source_endpoint: str = "/surveys/forms/analyze",
     ) -> Dict[str, Any]:
         allowed_categories = self._get_allowed_categories(metadata)
+        client_id_from_metadata = (metadata or {}).get("client_id")
+        question_type = (metadata or {}).get("question_type")
+
+        if client_id_from_metadata and question_type in {
+            "SINGLE_CHOICE",
+            "MULTIPLE_CHOICE",
+            "RATING",
+            "CHECKBOX",
+        }:
+            exact_example = self.example_memory.search_exact_example(
+                client_id=client_id_from_metadata,
+                question_text=question_text,
+                input_point_text=point_text,
+                question_type=question_type,
+                allowed_categories=allowed_categories,
+            )
+
+            if exact_example:
+                sentiment = exact_example.get("final_sentiment")
+                if sentiment not in {1, 2, 3, 4, 5}:
+                    sentiment = 3
+
+                return {
+                    "text": self._normalize_text(exact_example.get("final_text")) or point_text,
+                    "sentiment": sentiment,
+                    "category": self._resolve_category(
+                        raw_category=exact_example.get("final_category"),
+                        allowed_categories=allowed_categories,
+                    ),
+                    "confidence": None,
+                }
         few_shot_examples = self._get_few_shot_examples(
             question_text=question_text,
             point_text=point_text,
             metadata=metadata,
-            limit=3,
+            limit=2,
         )
         structured_payload = {
             "question_type": (metadata or {}).get("question_type"),
