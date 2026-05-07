@@ -75,18 +75,17 @@ class SurveyExampleMemoryService:
         self,
         *,
         client_id: str,
-        limit: int = 50,
+        limit: Optional[int] = None,
         question_type: Optional[str] = None,
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Liste les exemples actifs stockés dans Qdrant pour un client.
 
-        Utilisé par GET /surveys/feedback.
+        Si limit est None, retourne tous les exemples actifs.
+        Si limit est fourni, retourne les N exemples les plus récents.
         """
         self.ensure_collection()
-
-        safe_limit = max(1, min(limit, 200))
 
         must_conditions: List[models.Condition] = [
             models.FieldCondition(
@@ -115,39 +114,50 @@ class SurveyExampleMemoryService:
                 )
             )
 
-        results, _ = self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=models.Filter(must=must_conditions),
-            with_payload=True,
-            limit=safe_limit,
-        )
-
         examples: List[Dict[str, Any]] = []
+        next_offset = None
 
-        for item in results:
-            payload = item.payload or {}
-            examples.append(
-                {
-                    "id": str(item.id),
-                    "client_id": payload.get("client_id"),
-                    "question_text": payload.get("question_text"),
-                    "input_point_text": payload.get("input_point_text"),
-                    "final_text": payload.get("final_text"),
-                    "final_sentiment": payload.get("final_sentiment"),
-                    "final_category": payload.get("final_category"),
-                    "question_type": payload.get("question_type"),
-                    "example_type": payload.get("example_type"),
-                    "response_id": payload.get("response_id"),
-                    "point_id": payload.get("point_id"),
-                    "created_at": payload.get("created_at"),
-                    "is_active": payload.get("is_active"),
-                }
+        while True:
+            results, next_offset = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=models.Filter(must=must_conditions),
+                with_payload=True,
+                limit=256,
+                offset=next_offset,
             )
+
+            for item in results:
+                payload = item.payload or {}
+                examples.append(
+                    {
+                        "id": str(item.id),
+                        "client_id": payload.get("client_id"),
+                        "question_text": payload.get("question_text"),
+                        "input_point_text": payload.get("input_point_text"),
+                        "final_text": payload.get("final_text"),
+                        "final_sentiment": payload.get("final_sentiment"),
+                        "final_category": payload.get("final_category"),
+                        "question_type": payload.get("question_type"),
+                        "example_type": payload.get("example_type"),
+                        "response_id": payload.get("response_id"),
+                        "point_id": payload.get("point_id"),
+                        "created_at": payload.get("created_at"),
+                        "is_active": payload.get("is_active"),
+                    }
+                )
+
+            if next_offset is None or not results:
+                break
 
         examples.sort(
             key=lambda item: item.get("created_at") or "",
             reverse=True,
         )
+
+        if limit is not None:
+            if limit <= 0:
+                return []
+            examples = examples[:limit]
 
         return examples
 

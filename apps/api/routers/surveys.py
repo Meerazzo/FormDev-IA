@@ -450,14 +450,18 @@ async def save_survey_feedback(
 Retourne les exemples actifs stockés dans Qdrant pour un client.
 
 Cette route lit la mémoire vectorielle utilisée pour l'apprentissage dynamique.
-Elle ne lit pas PostgreSQL.
+Paramètres :
+- client_id : identifiant client à lire dans Qdrant
+- category : filtre optionnel par catégorie finale
+- question_type : filtre optionnel par type de question
+- limit : nombre maximum de résultats à retourner. Si absent, aucune limite n'est appliquée.
 """,
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def list_survey_feedback(
     request: Request,
     client_id: str,
-    limit: int = 50,
+    limit: int | None = None,
     question_type: str | None = None,
     category: str | None = None,
     api_key: str | None = Security(api_key_header),
