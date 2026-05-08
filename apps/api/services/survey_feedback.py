@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import logging
+import uuid
 
 from core.config import settings
 from db.models.survey_processing_job import SurveyProcessingJob
@@ -437,6 +438,11 @@ class SurveyFeedbackService:
         }
 
         for item in points:
+            action = self._normalize_action(item.get("action"))
+
+            if action == "add" and not item.get("point_id"):
+                item["point_id"] = f"{response_id}_manual_{uuid.uuid4().hex[:8]}"
+            
             point_id = item.get("point_id")
             existing_point = self._get_existing_point(response_id, point_id)
 
@@ -559,7 +565,7 @@ class SurveyFeedbackService:
             self.db.add(
                 ValidatedResponsePoint(
                     response_id=response_id,
-                    point_id=None,
+                    point_id=point_id,
                     final_text=corrected_text,
                     final_sentiment=item.get("corrected_sentiment"),
                     final_category=item.get("corrected_category"),
@@ -769,29 +775,3 @@ class SurveyFeedbackService:
                 response_id=response_id,
                 point_id=None,
             )
-
-    def _purge_response_data_after_feedback(self, response_id: str) -> None:
-        """
-        Supprime les données PostgreSQL temporaires liées à une réponse après feedback.
-
-        La mémoire métier utile est conservée dans Qdrant.
-        """
-        self.db.query(AIInteraction).filter(
-            AIInteraction.source_ref == response_id,
-        ).delete(synchronize_session=False)
-
-        self.db.query(PointFeedback).filter(
-            PointFeedback.response_id == response_id,
-        ).delete(synchronize_session=False)
-
-        self.db.query(ResponsePoint).filter(
-            ResponsePoint.response_id == response_id,
-        ).delete(synchronize_session=False)
-
-        self.db.query(ValidatedResponsePoint).filter(
-            ValidatedResponsePoint.response_id == response_id,
-        ).delete(synchronize_session=False)
-
-        self.db.query(SurveyResponse).filter(
-            SurveyResponse.response_id == response_id,
-        ).delete(synchronize_session=False)

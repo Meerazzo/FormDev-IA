@@ -177,6 +177,9 @@ class SurveyProcessingCreateResponse(StrictModel):
 class SurveyFeedbackExample(StrictModel):
     id: str
     client_id: Optional[str] = None
+    questionnaire_id: Optional[str] = None
+    question_id: Optional[str] = None
+    answer_id: Optional[str] = None
     question_text: Optional[str] = None
     input_point_text: Optional[str] = None
     final_text: Optional[str] = None
