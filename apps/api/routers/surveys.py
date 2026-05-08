@@ -461,6 +461,7 @@ Paramètres :
 async def list_survey_feedback(
     request: Request,
     client_id: str,
+    questionnaire_id: str | None = None,
     limit: int | None = None,
     question_type: str | None = None,
     category: str | None = None,
@@ -481,6 +482,7 @@ async def list_survey_feedback(
             limit=limit,
             question_type=question_type,
             category=category,
+            questionnaire_id=questionnaire_id,
         )
     except Exception as e:
         raise HTTPException(

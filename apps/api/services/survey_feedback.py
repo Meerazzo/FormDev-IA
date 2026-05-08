@@ -168,9 +168,11 @@ class SurveyFeedbackService:
         return data
 
 
-    def _sync_processing_result_json(self, response_id: str) -> None:
-        from sqlalchemy.orm.attributes import flag_modified
-
+    def _sync_processing_result_json(
+        self,
+        response_id: str,
+        feedback_points: list[Dict[str, Any]],
+    ) -> None:
         survey_response = self._get_survey_response(response_id)
         if not survey_response:
             return
@@ -179,23 +181,224 @@ class SurveyFeedbackService:
         if not job or not job.result_json:
             return
 
-        new_segments = self._segments_from_validated_points(response_id)
+        updated_segments = []
+        deleted_point_ids = set()
 
-        updated_json = self._replace_segments_in_result_json(
+        sentiment_map = {
+            1: "VERY_NEGATIVE",
+            2: "NEGATIVE",
+            3: "NEUTRAL",
+            4: "POSITIVE",
+            5: "VERY_POSITIVE",
+        }
+
+        for item in feedback_points:
+            action = self._normalize_action(item.get("action"))
+            point_id = item.get("point_id")
+
+            if action == "delete" and point_id:
+                deleted_point_ids.add(point_id)
+                continue
+
+            if not point_id:
+                continue
+
+            validated_point = self._get_validated_point(
+                response_id=response_id,
+                point_id=point_id,
+            )
+
+            if not validated_point:
+                continue
+
+            updated_segments.append(
+                {
+                    "text": validated_point.final_text,
+                    "point_id": validated_point.point_id,
+                    "sentiment": sentiment_map.get(
+                        validated_point.final_sentiment,
+                        "NEUTRAL",
+                    ),
+                    "category_label": validated_point.final_category,
+                }
+            )
+
+        updated_json = self._patch_segments_in_result_json(
             data=job.result_json,
             response_id=response_id,
-            new_segments=new_segments,
+            updated_segments=updated_segments,
+            deleted_point_ids=deleted_point_ids,
         )
 
         job.result_json = updated_json
         flag_modified(job, "result_json")
-        
+
+    def _patch_segments_in_result_json(
+        self,
+        data: Dict[str, Any],
+        response_id: str,
+        updated_segments: list[dict[str, Any]],
+        deleted_point_ids: set[str],
+    ) -> Dict[str, Any]:
+        for questionnaire in data.get("questionnaires", []):
+            category_map = self._category_id_by_label(questionnaire)
+
+            for question in questionnaire.get("questions", []):
+                target = None
+
+                if question.get("response_id") == response_id:
+                    target = question
+
+                answer = question.get("answer")
+                if isinstance(answer, dict) and answer.get("response_id") == response_id:
+                    target = answer
+
+                for ans in question.get("answers", []) or []:
+                    if ans.get("response_id") == response_id:
+                        target = ans
+                        break
+
+                if not target:
+                    continue
+
+                existing_segments = target.get("segments", []) or []
+
+                if deleted_point_ids:
+                    existing_segments = [
+                        segment
+                        for segment in existing_segments
+                        if segment.get("point_id") not in deleted_point_ids
+                    ]
+
+                by_point_id = {
+                    segment.get("point_id"): segment
+                    for segment in existing_segments
+                    if segment.get("point_id")
+                }
+
+                for segment in updated_segments:
+                    category_label = segment.get("category_label")
+                    category_id = (
+                        None
+                        if category_label is None
+                        else category_map.get(category_label)
+                    )
+
+                    public_segment = {
+                        "text": segment.get("text", ""),
+                        "point_id": segment.get("point_id"),
+                        "sentiment": segment.get("sentiment", "NEUTRAL"),
+                        "categoryId": category_id,
+                    }
+
+                    point_id = public_segment.get("point_id")
+
+                    if point_id in by_point_id:
+                        by_point_id[point_id].update(public_segment)
+                    else:
+                        existing_segments.append(public_segment)
+
+                target["segments"] = existing_segments
+                return data
+
+        return data
+
     def _get_survey_response(self, response_id: str) -> Optional[SurveyResponse]:
         return (
             self.db.query(SurveyResponse)
             .filter(SurveyResponse.response_id == response_id)
             .first()
         )
+
+    def _save_feedback_from_qdrant_memory(
+        self,
+        *,
+        response_id: str,
+        points: list[Dict[str, Any]],
+        operator_id: Optional[str],
+        client_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        Permet de modifier un feedback déjà purgé de PostgreSQL.
+        La source de vérité est alors Qdrant.
+        """
+        if not client_id:
+            raise ValueError("client_id is required to update feedback from memory")
+
+        saved_count = 0
+
+        for item in points:
+            point_id = item.get("point_id")
+            action = self._normalize_action(item.get("action"))
+
+            existing_example = self.example_memory.get_example_by_response_point(
+                client_id=client_id,
+                response_id=response_id,
+                point_id=point_id,
+            )
+
+            if not existing_example:
+                raise ValueError("Survey response not found")
+
+            input_point_text = existing_example.get("input_point_text")
+            if not input_point_text:
+                raise ValueError("Feedback memory is incomplete")
+
+            if action == "delete":
+                self.example_memory.deactivate_example(
+                    response_id=response_id,
+                    point_id=point_id,
+                    input_point_text=input_point_text,
+                )
+                saved_count += 1
+                continue
+
+            has_correction = (
+                item.get("corrected_text")
+                or item.get("corrected_sentiment") is not None
+                or item.get("corrected_category")
+            )
+
+            final_text = item.get("corrected_text") or existing_example.get("final_text")
+            final_sentiment = (
+                item.get("corrected_sentiment")
+                if item.get("corrected_sentiment") is not None
+                else existing_example.get("final_sentiment")
+            )
+            final_category = (
+                item.get("corrected_category")
+                or existing_example.get("final_category")
+            )
+
+            example_type = (
+                "operator_corrected"
+                if has_correction
+                else "operator_validated"
+            )
+
+            self.example_memory.upsert_example(
+                client_id=client_id,
+                question_text=existing_example.get("question_text"),
+                input_point_text=input_point_text,
+                final_text=final_text,
+                final_sentiment=final_sentiment,
+                final_category=final_category,
+                question_type=existing_example.get("question_type"),
+                example_type=example_type,
+                response_id=response_id,
+                point_id=point_id,
+                questionnaire_id=existing_example.get("questionnaire_id"),
+                question_id=existing_example.get("question_id"),
+                answer_id=existing_example.get("answer_id"),
+            )
+
+            saved_count += 1
+
+        return {
+            "response_id": response_id,
+            "saved_feedback_count": saved_count,
+            "status": "ok",
+        }
 
     def save_feedback(
         self,
@@ -208,8 +411,14 @@ class SurveyFeedbackService:
         saved_count = 0
 
         survey_response = self._get_survey_response(response_id)
+
         if not survey_response:
-            raise ValueError("Survey response not found")
+            return self._save_feedback_from_qdrant_memory(
+                response_id=response_id,
+                points=points,
+                operator_id=operator_id,
+                client_id=client_id,
+            )
 
         response_client_id = (
             getattr(survey_response, "client_id", None)
@@ -275,11 +484,17 @@ class SurveyFeedbackService:
                 )
 
             saved_count += 1
-        self._sync_processing_result_json(response_id=response_id)
+        self._sync_processing_result_json(
+            response_id=response_id,
+            feedback_points=points,
+        )
 
         if settings.SURVEY_PURGE_AFTER_FEEDBACK:
             self.db.flush()
-            self._purge_response_data_after_feedback(response_id=response_id)
+            self._purge_feedbacked_points_after_feedback(
+                response_id=response_id,
+                points=points,
+            )
 
         self.db.commit()
 
@@ -379,6 +594,68 @@ class SurveyFeedbackService:
 
         return None
 
+    def _purge_feedbacked_points_after_feedback(
+        self,
+        response_id: str,
+        points: list[Dict[str, Any]],
+    ) -> None:
+        """
+        Supprime uniquement les points feedbackés.
+        La réponse complète est supprimée seulement s'il ne reste plus aucun point actif.
+        """
+        point_ids = [
+            item.get("point_id")
+            for item in points
+            if item.get("point_id")
+        ]
+
+        for point_id in point_ids:
+            self.db.query(PointFeedback).filter(
+                PointFeedback.response_id == response_id,
+                PointFeedback.point_id == point_id,
+            ).delete(synchronize_session=False)
+
+            self.db.query(ResponsePoint).filter(
+                ResponsePoint.response_id == response_id,
+                ResponsePoint.point_id == point_id,
+            ).delete(synchronize_session=False)
+
+            self.db.query(ValidatedResponsePoint).filter(
+                ValidatedResponsePoint.response_id == response_id,
+                ValidatedResponsePoint.point_id == point_id,
+            ).delete(synchronize_session=False)
+
+        remaining_points = (
+            self.db.query(ResponsePoint)
+            .filter(
+                ResponsePoint.response_id == response_id,
+                ResponsePoint.is_active == "true",
+            )
+            .count()
+        )
+
+        if remaining_points == 0:
+            self.db.query(PointFeedback).filter(
+                PointFeedback.response_id == response_id,
+            ).delete(synchronize_session=False)
+
+            self.db.query(ValidatedResponsePoint).filter(
+                ValidatedResponsePoint.response_id == response_id,
+            ).delete(synchronize_session=False)
+
+            self.db.query(SurveyResponse).filter(
+                SurveyResponse.response_id == response_id,
+            ).delete(synchronize_session=False)
+
+            try:
+                from db.models.ai_interaction import AIInteraction
+
+                self.db.query(AIInteraction).filter(
+                    AIInteraction.source_ref == response_id,
+                ).delete(synchronize_session=False)
+            except Exception:
+                pass
+
     def _push_feedback_example_to_memory(
         self,
         *,
@@ -390,6 +667,9 @@ class SurveyFeedbackService:
         client_id = (metadata or {}).get("client_id")
         question_text = (metadata or {}).get("question_text")
         question_type = (metadata or {}).get("question_type")
+        questionnaire_id = (metadata or {}).get("questionnaire_id")
+        question_id = (metadata or {}).get("client_question_id")
+        answer_id = (metadata or {}).get("client_answer_id")
 
         if not client_id or not question_text:
             return
@@ -423,6 +703,9 @@ class SurveyFeedbackService:
             ):
                 self.example_memory.upsert_example(
                     client_id=client_id,
+                    questionnaire_id=questionnaire_id,
+                    question_id=question_id,
+                    answer_id=answer_id,
                     question_text=question_text,
                     input_point_text=memory_input_text,
                     final_text=existing_point.point_text,
@@ -446,6 +729,9 @@ class SurveyFeedbackService:
 
             self.example_memory.upsert_example(
                 client_id=client_id,
+                questionnaire_id=questionnaire_id,
+                question_id=question_id,
+                answer_id=answer_id,
                 question_text=question_text,
                 input_point_text=memory_input_text,
                 final_text=final_text,
@@ -470,6 +756,9 @@ class SurveyFeedbackService:
 
             self.example_memory.upsert_example(
                 client_id=client_id,
+                questionnaire_id=questionnaire_id,
+                question_id=question_id,
+                answer_id=answer_id,
                 question_text=question_text,
                 input_point_text=input_point_text,
                 final_text=corrected_text,

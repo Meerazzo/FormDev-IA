@@ -61,6 +61,11 @@ class SurveyExampleMemoryService:
             ("is_active", models.PayloadSchemaType.BOOL),
             ("question_text_norm", models.PayloadSchemaType.KEYWORD),
             ("input_point_text_norm", models.PayloadSchemaType.KEYWORD),
+            ("questionnaire_id", models.PayloadSchemaType.KEYWORD),
+            ("question_id", models.PayloadSchemaType.KEYWORD),
+            ("answer_id", models.PayloadSchemaType.KEYWORD),
+            ("response_id", models.PayloadSchemaType.KEYWORD),
+            ("point_id", models.PayloadSchemaType.KEYWORD),
         ]:
             try:
                 self.client.create_payload_index(
@@ -78,6 +83,7 @@ class SurveyExampleMemoryService:
         limit: Optional[int] = None,
         question_type: Optional[str] = None,
         category: Optional[str] = None,
+        questionnaire_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Liste les exemples actifs stockés dans Qdrant pour un client.
@@ -114,6 +120,14 @@ class SurveyExampleMemoryService:
                 )
             )
 
+        if questionnaire_id:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="questionnaire_id",
+                    match=models.MatchValue(value=str(questionnaire_id)),
+                )
+            )
+
         examples: List[Dict[str, Any]] = []
         next_offset = None
 
@@ -132,6 +146,9 @@ class SurveyExampleMemoryService:
                     {
                         "id": str(item.id),
                         "client_id": payload.get("client_id"),
+                        "questionnaire_id": payload.get("questionnaire_id"),
+                        "question_id": payload.get("question_id"),
+                        "answer_id": payload.get("answer_id"),
                         "question_text": payload.get("question_text"),
                         "input_point_text": payload.get("input_point_text"),
                         "final_text": payload.get("final_text"),
@@ -290,6 +307,57 @@ class SurveyExampleMemoryService:
             "point_id": best.get("point_id"),
         }
 
+    def get_example_by_response_point(
+        self,
+        *,
+        client_id: str,
+        response_id: str,
+        point_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        self.ensure_collection()
+
+        must_conditions: List[models.Condition] = [
+            models.FieldCondition(
+                key="client_id",
+                match=models.MatchValue(value=client_id),
+            ),
+            models.FieldCondition(
+                key="response_id",
+                match=models.MatchValue(value=response_id),
+            ),
+            models.FieldCondition(
+                key="is_active",
+                match=models.MatchValue(value=True),
+            ),
+        ]
+
+        if point_id:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="point_id",
+                    match=models.MatchValue(value=point_id),
+                )
+            )
+
+        results, _ = self.client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=models.Filter(must=must_conditions),
+            with_payload=True,
+            limit=20,
+        )
+
+        if not results:
+            return None
+
+        examples = [item.payload or {} for item in results]
+
+        examples.sort(
+            key=lambda item: item.get("created_at") or "",
+            reverse=True,
+        )
+
+        return examples[0]
+
     def upsert_example(
         self,
         *,
@@ -303,6 +371,9 @@ class SurveyExampleMemoryService:
         response_id: str,
         point_id: Optional[str],
         question_type: Optional[str] = None,
+        questionnaire_id: Optional[str] = None,
+        question_id: Optional[str] = None,
+        answer_id: Optional[str] = None,
     ) -> str:
         """
         Ajoute ou met à jour un exemple dans Qdrant.
@@ -319,6 +390,9 @@ class SurveyExampleMemoryService:
 
         payload: Dict[str, Any] = {
             "client_id": client_id,
+            "questionnaire_id": questionnaire_id,
+            "question_id": question_id,
+            "answer_id": answer_id,
             "question_text": question_text,
             "question_text_norm": self._normalize_exact(question_text),
             "input_point_text": input_point_text,
