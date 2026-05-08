@@ -1,10 +1,11 @@
 from redis import Redis
 from rq import Worker
-
+from core.logging import setup_logging
 from core.config import settings
 
 
 def main() -> None:
+    setup_logging()
     redis_conn = Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,

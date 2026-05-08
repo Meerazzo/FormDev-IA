@@ -82,6 +82,42 @@ services:
   redis-prod:
     image: redis:8
     restart: unless-stopped
+  
+  mongo-graylog:
+    image: mongo:6
+    volumes:
+      - mongo_graylog_data:/data/db
+    restart: unless-stopped
+
+  opensearch-graylog:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - opensearch_graylog_data:/usr/share/opensearch/data
+    restart: unless-stopped
+
+  graylog:
+    image: graylog/graylog:5.2
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://192.168.64.50:${GRAYLOG_HTTP_PORT}/
+      - GRAYLOG_MONGODB_URI=mongodb://mongo-graylog:27017/graylog
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch-graylog:9200
+    depends_on:
+      - mongo-graylog
+      - opensearch-graylog
+    ports:
+      - "${GRAYLOG_HTTP_PORT}:9000"
+      - "${GRAYLOG_GELF_UDP_PORT}:12201/udp"
+    volumes:
+      - graylog_journal:/usr/share/graylog/data/journal
+    restart: unless-stopped
 
   api-dev:
     build:
@@ -104,6 +140,11 @@ services:
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
       - SURVEY_PURGE_AFTER_FEEDBACK=${SURVEY_PURGE_AFTER_FEEDBACK:-false}
+      - APP_ENV=dev
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
     ports:
       - "${API_DEV_PORT}:8080"
     depends_on:
@@ -139,6 +180,11 @@ services:
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - APP_ENV=dev
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
     depends_on:
       postgres-dev:
         condition: service_healthy
@@ -174,6 +220,11 @@ services:
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
       - SURVEY_PURGE_AFTER_FEEDBACK=${SURVEY_PURGE_AFTER_FEEDBACK:-false}
+      - APP_ENV=prod
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
     ports:
       - "${API_PROD_PORT}:8080"
     depends_on:
@@ -209,6 +260,11 @@ services:
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - APP_ENV=prod
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
     depends_on:
       postgres-prod:
         condition: service_healthy
@@ -228,3 +284,6 @@ volumes:
   postgres_prod_data:
   qdrant_dev_storage:
   qdrant_prod_storage:
+  mongo_graylog_data:
+  opensearch_graylog_data:
+  graylog_journal:

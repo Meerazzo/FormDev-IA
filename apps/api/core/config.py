@@ -44,4 +44,11 @@ class Settings(BaseSettings):
 
     SURVEY_PURGE_AFTER_FEEDBACK: bool = False
 
+    APP_ENV: str = "dev"
+
+    GRAYLOG_ENABLED: bool = False
+    GRAYLOG_HOST: str = "graylog"
+    GRAYLOG_PORT: int = 12201
+    GRAYLOG_FACILITY: str = "formdev-ia"
+
 settings = Settings()
