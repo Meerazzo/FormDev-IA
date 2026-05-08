@@ -9,7 +9,7 @@ API publique retenue :
 Les endpoints sont protégés par clé API et soumis au rate limiting.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Security, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Security, Body, Query
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -332,18 +332,41 @@ async def get_processing_status(
     response_model=SurveyFeedbackResponse,
     summary="Enregistrer un feedback opérateur sur une analyse",
     description="""
-Enregistre une validation ou une correction opérateur sur les points issus d'une analyse.
+Enregistre une validation, une correction, une suppression ou un ajout manuel sur les points issus d'une analyse Survey.
+
+### Principe
+Le feedback se fait au niveau d'un `point_id`.
+
+Un `response_id` correspond à une réponse utilisateur.
+Un `point_id` correspond à un segment analysé dans cette réponse.
+
+Une réponse ouverte peut donc contenir plusieurs points :
+- `response_id_pt_1`
+- `response_id_pt_2`
+- etc.
 
 ### Actions possibles
-- `update` : corriger un point existant
-- `delete` : désactiver un point existant
-- `add` : ajouter un nouveau point manuel
+- `update` : valider ou corriger un point existant
+- `delete` : supprimer / désactiver un point existant
+- `add` : ajouter manuellement un nouveau point non détecté par le modèle
+
+### Cas de validation simple
+Si `is_correct=true` et qu'aucun champ `corrected_*` n'est fourni, le point est considéré comme validé tel quel.
+
+### Cas de correction
+Si un ou plusieurs champs `corrected_text`, `corrected_sentiment` ou `corrected_category` sont fournis, ils remplacent les valeurs initiales du point.
+
+### Cas d'ajout manuel
+Pour `action=add`, `point_id` peut être laissé à `null`.
+L'API génère alors un identifiant technique pour le nouveau point.
 
 ### Effets
 L'API :
-- enregistre le feedback dans `point_feedback`
-- met à jour les données finales dans `validated_response_points`
-- met à jour la mémoire Qdrant en best effort pour les futurs cas similaires
+- enregistre ou applique le feedback opérateur ;
+- met à jour le résultat final retourné par `GET /surveys/processings/{processing_id}` ;
+- alimente Qdrant pour l'apprentissage dynamique ;
+- purge PostgreSQL après feedback si la purge est activée ;
+- permet de refaire un feedback sur un point déjà purgé en s'appuyant sur Qdrant.
 """,
     responses={
         200: {"description": "Feedback enregistré avec succès"},
@@ -355,24 +378,57 @@ L'API :
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def save_survey_feedback(
     request: Request,
-    client_id: str,
+    client_id: str = Query(
+        ...,
+        description="Identifiant client propriétaire de la réponse à corriger.",
+        examples=["client_demo"],
+    ),
     payload: SurveyFeedbackRequest = Body(
         ...,
         openapi_examples={
-            "correction_point_existant": {
-                "summary": "Correction d'un point existant",
-                "description": "Exemple de correction d'un point produit par le modèle.",
+            "validation_simple": {
+                "summary": "Validation simple d'un point correct",
+                "description": (
+                    "Le point proposé par le modèle est validé tel quel. "
+                    "Aucune correction n'est fournie. Le point est ajouté dans Qdrant "
+                    "comme exemple validé."
+                ),
                 "value": {
                     "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
                     "operator_id": "op_test_001",
                     "metadata": {
-                        "review_source": "manual_test"
+                        "review_source": "manual_review"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": True,
+                            "corrected_text": None,
+                            "corrected_sentiment": None,
+                            "corrected_category": None,
+                            "action": "update"
+                        }
+                    ]
+                },
+            },
+
+            "correction_complete": {
+                "summary": "Correction complète d'un point existant",
+                "description": (
+                    "Le texte, le sentiment et la catégorie du point sont corrigés. "
+                    "C'est le cas classique lorsqu'un segment est pertinent mais mal classé."
+                ),
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_review"
                     },
                     "points": [
                         {
                             "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
                             "is_correct": False,
-                            "corrected_text": "Service jugé satisfaisant",
+                            "corrected_text": "Service client jugé satisfaisant",
                             "corrected_sentiment": 4,
                             "corrected_category": "Satisfaction",
                             "action": "update"
@@ -380,20 +436,82 @@ async def save_survey_feedback(
                     ]
                 },
             },
-            "ajout_point_manuel": {
-                "summary": "Ajout manuel d'un point",
-                "description": "Exemple d'ajout d'un nouveau point qui n'avait pas été détecté automatiquement.",
+
+            "correction_sentiment_categorie": {
+                "summary": "Correction du sentiment et de la catégorie uniquement",
+                "description": (
+                    "Le texte du point est conservé, mais le sentiment et la catégorie sont corrigés."
+                ),
                 "value": {
                     "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
                     "operator_id": "op_test_001",
                     "metadata": {
-                        "review_source": "manual_test"
+                        "review_source": "manual_review"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": False,
+                            "corrected_text": None,
+                            "corrected_sentiment": 2,
+                            "corrected_category": "Amélioration",
+                            "action": "update"
+                        }
+                    ]
+                },
+            },
+
+            "correction_plusieurs_points": {
+                "summary": "Feedback sur plusieurs points d'une même réponse",
+                "description": (
+                    "Exemple utile pour une réponse ouverte contenant plusieurs segments. "
+                    "Un point est corrigé, l'autre est validé tel quel."
+                ),
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_review"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": False,
+                            "corrected_text": "Plus de choix de produits souhaité",
+                            "corrected_sentiment": 2,
+                            "corrected_category": "Amélioration",
+                            "action": "update"
+                        },
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_2",
+                            "is_correct": True,
+                            "corrected_text": None,
+                            "corrected_sentiment": None,
+                            "corrected_category": None,
+                            "action": "update"
+                        }
+                    ]
+                },
+            },
+
+            "ajout_point_manuel": {
+                "summary": "Ajout manuel d'un point oublié par le modèle",
+                "description": (
+                    "Permet d'ajouter un nouveau point lorsque le modèle n'a pas détecté "
+                    "un élément important dans la réponse. Le point_id peut être null : "
+                    "l'API génère alors un identifiant technique."
+                ),
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_001",
+                    "metadata": {
+                        "review_source": "manual_review"
                     },
                     "points": [
                         {
                             "point_id": None,
                             "is_correct": False,
-                            "corrected_text": "Navigation à améliorer",
+                            "corrected_text": "Navigation du site à améliorer",
                             "corrected_sentiment": 2,
                             "corrected_category": "Amélioration",
                             "action": "add"
@@ -401,14 +519,17 @@ async def save_survey_feedback(
                     ]
                 },
             },
+
             "suppression_point": {
-                "summary": "Suppression d'un point",
-                "description": "Exemple de désactivation d'un point jugé non pertinent.",
+                "summary": "Suppression d'un point non pertinent",
+                "description": (
+                    "Permet de supprimer un segment détecté par erreur ou jugé non exploitable."
+                ),
                 "value": {
                     "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
                     "operator_id": "op_test_001",
                     "metadata": {
-                        "review_source": "manual_test"
+                        "review_source": "manual_review"
                     },
                     "points": [
                         {
@@ -418,6 +539,32 @@ async def save_survey_feedback(
                             "corrected_sentiment": None,
                             "corrected_category": None,
                             "action": "delete"
+                        }
+                    ]
+                },
+            },
+
+            "feedback_apres_purge": {
+                "summary": "Modification d'un feedback déjà purgé de PostgreSQL",
+                "description": (
+                    "Si les données PostgreSQL ont déjà été purgées après un premier feedback, "
+                    "l'API peut retrouver le point dans Qdrant avec response_id + point_id "
+                    "et mettre à jour la correction."
+                ),
+                "value": {
+                    "response_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef",
+                    "operator_id": "op_test_002",
+                    "metadata": {
+                        "review_source": "second_review"
+                    },
+                    "points": [
+                        {
+                            "point_id": "83744cf8-878e-4a3d-b0ed-e523aac431ef_pt_1",
+                            "is_correct": False,
+                            "corrected_text": "Service client à améliorer",
+                            "corrected_sentiment": 2,
+                            "corrected_category": "Amélioration",
+                            "action": "update"
                         }
                     ]
                 },

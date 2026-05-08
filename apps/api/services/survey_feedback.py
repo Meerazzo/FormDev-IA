@@ -773,5 +773,5 @@ class SurveyFeedbackService:
                 question_type=question_type,
                 example_type="operator_added",
                 response_id=response_id,
-                point_id=None,
+                point_id=item.get("point_id"),
             )
