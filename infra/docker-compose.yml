@@ -103,6 +103,7 @@ services:
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - SURVEY_PURGE_AFTER_FEEDBACK=${SURVEY_PURGE_AFTER_FEEDBACK:-false}
     ports:
       - "${API_DEV_PORT}:8080"
     depends_on:
@@ -172,6 +173,7 @@ services:
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - SURVEY_PURGE_AFTER_FEEDBACK=${SURVEY_PURGE_AFTER_FEEDBACK:-false}
     ports:
       - "${API_PROD_PORT}:8080"
     depends_on:

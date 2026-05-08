@@ -42,5 +42,6 @@ class Settings(BaseSettings):
     RQ_RESULT_TTL: int = 600
     RQ_FAILURE_TTL: int = 86400
 
+    SURVEY_PURGE_AFTER_FEEDBACK: bool = False
 
 settings = Settings()

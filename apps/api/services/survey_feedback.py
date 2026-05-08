@@ -8,6 +8,7 @@ from db.models.point_feedback import PointFeedback
 from db.models.response_point import ResponsePoint
 from db.models.survey_response import SurveyResponse
 from db.models.validated_response_point import ValidatedResponsePoint
+from db.models.ai_interaction import AIInteraction
 from services.survey_example_memory import SurveyExampleMemoryService
 from sqlalchemy.orm.attributes import flag_modified
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class SurveyFeedbackService:
             )
             .first()
         )
+    
     def _get_processing_job_for_response(self, response: SurveyResponse) -> Optional[SurveyProcessingJob]:
         metadata = response.metadata_json or {}
         client_id = metadata.get("client_id")
@@ -274,6 +276,11 @@ class SurveyFeedbackService:
 
             saved_count += 1
         self._sync_processing_result_json(response_id=response_id)
+
+        if settings.SURVEY_PURGE_AFTER_FEEDBACK:
+            self.db.flush()
+            self._purge_response_data_after_feedback(response_id=response_id)
+
         self.db.commit()
 
         return {
@@ -473,3 +480,29 @@ class SurveyFeedbackService:
                 response_id=response_id,
                 point_id=None,
             )
+
+    def _purge_response_data_after_feedback(self, response_id: str) -> None:
+        """
+        Supprime les données PostgreSQL temporaires liées à une réponse après feedback.
+
+        La mémoire métier utile est conservée dans Qdrant.
+        """
+        self.db.query(AIInteraction).filter(
+            AIInteraction.source_ref == response_id,
+        ).delete(synchronize_session=False)
+
+        self.db.query(PointFeedback).filter(
+            PointFeedback.response_id == response_id,
+        ).delete(synchronize_session=False)
+
+        self.db.query(ResponsePoint).filter(
+            ResponsePoint.response_id == response_id,
+        ).delete(synchronize_session=False)
+
+        self.db.query(ValidatedResponsePoint).filter(
+            ValidatedResponsePoint.response_id == response_id,
+        ).delete(synchronize_session=False)
+
+        self.db.query(SurveyResponse).filter(
+            SurveyResponse.response_id == response_id,
+        ).delete(synchronize_session=False)
