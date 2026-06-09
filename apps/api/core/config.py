@@ -51,4 +51,17 @@ class Settings(BaseSettings):
     GRAYLOG_PORT: int = 12201
     GRAYLOG_FACILITY: str = "formdev-ia"
 
+    # RAG documentaire
+    RAG_QDRANT_COLLECTION: str = "rag_chunks"
+    RAG_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    RAG_VECTOR_SIZE: int = 384
+
+    RAG_DEFAULT_TOP_K: int = 5
+    RAG_SCORE_THRESHOLD: float = 0.25
+    RAG_CHUNK_SIZE: int = 800
+    RAG_CHUNK_OVERLAP: int = 120
+
+    RAG_STORAGE_DIR: str = "/data/rag"
+    RQ_RAG_QUEUE: str = "rag"
+
 settings = Settings()

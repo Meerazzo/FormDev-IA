@@ -28,6 +28,7 @@ from core.rate_limit import limiter
 from routers.health import router as health_router
 from routers.chat_proxy import router as chat_router
 from routers.surveys import router as surveys_router
+from routers.rag import router as rag_router
 
 
 def create_app() -> FastAPI:
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(surveys_router)
+    app.include_router(rag_router)
     #app.include_router(content_router)
 
     return app
