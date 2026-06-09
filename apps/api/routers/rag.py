@@ -6,16 +6,21 @@ Jour 1 :
   que Qdrant est accessible et que la collection documentaire est connue.
 """
 
-from __future__ import annotations
 
-from fastapi import APIRouter, Request, Security
+from fastapi import APIRouter, Request, Security, Body, Depends, HTTPException, Query
 from fastapi.security import APIKeyHeader
 
 from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
-from schemas.rag import RagHealthResponse
+from schemas.rag import RagHealthResponse, RagSourceResponse, RagUrlIngestRequest
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
+from services.rag.sources.source_service import RagSourceService
+
+from sqlalchemy.orm import Session
+
+from db.session import get_db
+
 
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -52,3 +57,74 @@ async def rag_health(
         vector_size=settings.RAG_VECTOR_SIZE,
         message=qdrant_status["error"],
     )
+
+
+@router.post(
+    "/sources/url",
+    response_model=RagSourceResponse,
+    summary="Déclarer une URL comme source RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def create_url_source(
+    request: Request,
+    payload: RagUrlIngestRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagSourceResponse:
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+    return service.create_url_source(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        url=str(payload.url),
+        source_name=payload.source_name,
+        metadata=payload.metadata,
+    )
+
+
+@router.get(
+    "/sources",
+    response_model=list[RagSourceResponse],
+    summary="Lister les sources RAG d'un client",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_sources(
+    request: Request,
+    client_id: str = Query(...),
+    corpus_id: str | None = Query(default=None),
+    include_deleted: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> list[RagSourceResponse]:
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+    return service.list_sources(
+        client_id=client_id,
+        corpus_id=corpus_id,
+        include_deleted=include_deleted,
+    )
+
+
+@router.delete(
+    "/sources/{source_id}",
+    response_model=RagSourceResponse,
+    summary="Marquer une source RAG comme supprimée",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def delete_source(
+    request: Request,
+    source_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagSourceResponse:
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+    source = service.mark_deleted(source_id)
+
+    if source is None:
+        raise HTTPException(status_code=404, detail="RAG source not found")
+
+    return source
