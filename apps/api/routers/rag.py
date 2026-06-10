@@ -1,27 +1,25 @@
 """
 Routes HTTP du module RAG documentaire.
-
-Jour 1 :
-- /rag/health permet de vérifier que la configuration RAG est chargée,
-  que Qdrant est accessible et que la collection documentaire est connue.
 """
 
-
-from fastapi import APIRouter, Request, Security, Body, Depends, HTTPException, Query, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, Security, UploadFile
 from fastapi.security import APIKeyHeader
+from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
-from schemas.rag import RagHealthResponse, RagSourceResponse, RagUrlIngestRequest, RagUploadResponse
-from services.rag.vectorstore.rag_vector_store import RagVectorStore
-from services.rag.sources.source_service import RagSourceService
-from services.rag.ingestion.ingest_service import RagIngestService
-
-from sqlalchemy.orm import Session
-
 from db.session import get_db
-
+from schemas.rag import (
+    RagHealthResponse,
+    RagSourceResponse,
+    RagUploadResponse,
+    RagUrlIngestPreviewResponse,
+    RagUrlIngestRequest,
+)
+from services.rag.ingestion.ingest_service import RagIngestService
+from services.rag.sources.source_service import RagSourceService
+from services.rag.vectorstore.rag_vector_store import RagVectorStore
 
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -61,9 +59,37 @@ async def rag_health(
 
 
 @router.post(
+    "/sources/upload",
+    response_model=RagUploadResponse,
+    summary="Uploader un fichier TXT, PDF ou DOCX et préparer les chunks RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def upload_source(
+    request: Request,
+    client_id: str,
+    corpus_id: str = "default",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagUploadResponse:
+    authenticate(api_key)
+
+    service = RagIngestService(db)
+
+    try:
+        return await service.ingest_upload_preview(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            upload_file=file,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
     "/sources/url",
     response_model=RagSourceResponse,
-    summary="Déclarer une URL comme source RAG",
+    summary="Déclarer une URL comme source RAG sans ingestion",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def create_url_source(
@@ -82,6 +108,36 @@ async def create_url_source(
         source_name=payload.source_name,
         metadata=payload.metadata,
     )
+
+
+@router.post(
+    "/sources/url/ingest",
+    response_model=RagUrlIngestPreviewResponse,
+    summary="Ingestion d'une URL et préparation des chunks RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def ingest_url_source(
+    request: Request,
+    payload: RagUrlIngestRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagUrlIngestPreviewResponse:
+    authenticate(api_key)
+
+    service = RagIngestService(db)
+
+    try:
+        return service.ingest_url_preview(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            url=str(payload.url),
+            source_name=payload.source_name,
+            metadata=payload.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Erreur ingestion URL: {str(exc)}") from exc
 
 
 @router.get(
@@ -129,33 +185,3 @@ async def delete_source(
         raise HTTPException(status_code=404, detail="RAG source not found")
 
     return source
-
-
-@router.post(
-    "/sources/upload",
-    response_model=RagUploadResponse,
-    summary="Uploader un fichier TXT ou PDF et préparer les chunks RAG",
-)
-@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
-async def upload_source(
-    request: Request,
-    client_id: str,
-    corpus_id: str = "default",
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    api_key: str | None = Security(api_key_header),
-) -> RagUploadResponse:
-    authenticate(api_key)
-
-    service = RagIngestService(db)
-
-    try:
-        return await service.ingest_upload_preview(
-            client_id=client_id,
-            corpus_id=corpus_id,
-            upload_file=file,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    
-    

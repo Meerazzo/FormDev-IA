@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from services.rag.ingestion.parsers.base import BaseParser
+from services.rag.ingestion.parsers.docx_parser import DocxParser
 from services.rag.ingestion.parsers.pdf_parser import PdfParser
 from services.rag.ingestion.parsers.txt_parser import TxtParser
 
@@ -16,4 +17,9 @@ class ParserResolver:
         if source_type == "txt" or suffix == ".txt":
             return TxtParser()
 
-        raise ValueError(f"Type de fichier non supporté pour l'instant: {source_type or suffix}")
+        if source_type == "docx" or suffix == ".docx":
+            return DocxParser()
+
+        raise ValueError(
+            f"Type de fichier non supporté pour l'instant: {source_type or suffix}"
+        )

@@ -20,3 +20,6 @@ graypy==2.1.0
 
 python-multipart
 pymupdf
+python-docx
+trafilatura
+beautifulsoup4

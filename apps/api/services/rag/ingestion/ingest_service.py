@@ -9,9 +9,10 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from core.config import settings
-from schemas.rag import RagUploadResponse
+from schemas.rag import RagUploadResponse, RagUrlIngestPreviewResponse
 from services.rag.ingestion.chunker import RagChunker
 from services.rag.ingestion.parsers.resolver import ParserResolver
+from services.rag.ingestion.parsers.url_parser import UrlParser
 from services.rag.sources.source_repository import RagSourceRepository
 
 
@@ -60,24 +61,15 @@ class RagIngestService:
 
         chunks = self.chunker.chunk_pages(parsed_document.pages)
 
-        chunks_payload = [
-            {
-                "client_id": client_id,
-                "corpus_id": corpus_id,
-                "source_id": source.source_id,
-                "source_type": source.source_type,
-                "source_name": source.source_name,
-                "page": chunk.page,
-                "chunk_index": chunk.chunk_index,
-                "text": chunk.text,
-                "metadata": chunk.metadata,
-            }
-            for chunk in chunks
-        ]
-
-        chunks_path = file_path.with_suffix(file_path.suffix + ".chunks.json")
-        with open(chunks_path, "w", encoding="utf-8") as file:
-            json.dump(chunks_payload, file, ensure_ascii=False, indent=2)
+        chunks_path = self._write_chunks_file(
+            base_path=file_path,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_id=source.source_id,
+            source_type=source.source_type,
+            source_name=source.source_name,
+            chunks=chunks,
+        )
 
         self.source_repository.update_status(
             source_id=source.source_id,
@@ -95,16 +87,118 @@ class RagIngestService:
             file_path=str(file_path),
             chunks_path=str(chunks_path),
             chunks_count=len(chunks),
-            preview_chunks=[
-                {
-                    "page": chunk.page,
-                    "chunk_index": chunk.chunk_index,
-                    "text": chunk.text[:500],
-                }
-                for chunk in chunks[:3]
-            ],
+            preview_chunks=self._preview_chunks(chunks),
             parser_metadata=parsed_document.metadata,
         )
+
+    def ingest_url_preview(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        url: str,
+        source_name: str | None = None,
+        metadata: dict | None = None,
+    ) -> RagUrlIngestPreviewResponse:
+        storage_dir = self._build_storage_dir(client_id=client_id)
+        storage_dir.mkdir(parents=True, exist_ok=True)
+
+        parser = UrlParser()
+        parsed_document = parser.parse_url(url)
+
+        final_source_name = source_name or parsed_document.metadata.get("title") or url
+        safe_source_name = self._safe_filename(final_source_name)[:120] or "url_source"
+
+        content_hash = self._hash_text(parsed_document.text)
+
+        source = self.source_repository.create_source(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_type="url",
+            source_name=final_source_name,
+            source_uri=url,
+            metadata_json={
+                **(metadata or {}),
+                **parsed_document.metadata,
+            },
+            content_hash=content_hash,
+        )
+
+        chunks = self.chunker.chunk_pages(parsed_document.pages)
+
+        base_path = storage_dir / f"{uuid4().hex}_{safe_source_name}.url"
+        chunks_path = self._write_chunks_file(
+            base_path=base_path,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_id=source.source_id,
+            source_type=source.source_type,
+            source_name=source.source_name,
+            chunks=chunks,
+        )
+
+        self.source_repository.update_status(
+            source_id=source.source_id,
+            status="pending",
+            qdrant_points_count=len(chunks),
+        )
+
+        return RagUrlIngestPreviewResponse(
+            source_id=source.source_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_type=source.source_type,
+            source_name=source.source_name,
+            status="pending",
+            source_uri=url,
+            chunks_path=str(chunks_path),
+            chunks_count=len(chunks),
+            preview_chunks=self._preview_chunks(chunks),
+            parser_metadata=parsed_document.metadata,
+        )
+
+    def _write_chunks_file(
+        self,
+        *,
+        base_path: Path,
+        client_id: str,
+        corpus_id: str,
+        source_id: str,
+        source_type: str,
+        source_name: str,
+        chunks,
+    ) -> Path:
+        chunks_payload = [
+            {
+                "client_id": client_id,
+                "corpus_id": corpus_id,
+                "source_id": source_id,
+                "source_type": source_type,
+                "source_name": source_name,
+                "page": chunk.page,
+                "chunk_index": chunk.chunk_index,
+                "text": chunk.text,
+                "metadata": chunk.metadata,
+            }
+            for chunk in chunks
+        ]
+
+        chunks_path = base_path.with_suffix(base_path.suffix + ".chunks.json")
+
+        with open(chunks_path, "w", encoding="utf-8") as file:
+            json.dump(chunks_payload, file, ensure_ascii=False, indent=2)
+
+        return chunks_path
+
+    def _preview_chunks(self, chunks) -> list[dict]:
+        return [
+            {
+                "page": chunk.page,
+                "chunk_index": chunk.chunk_index,
+                "text": chunk.text[:500],
+            }
+            for chunk in chunks[:3]
+        ]
 
     def _build_storage_dir(self, *, client_id: str) -> Path:
         return Path(settings.RAG_STORAGE_DIR) / client_id
@@ -118,7 +212,13 @@ class RagIngestService:
         if suffix == ".txt":
             return "txt"
 
-        raise ValueError("Type de fichier non supporté pour l'instant. Formats acceptés: .txt, .pdf")
+        if suffix == ".docx":
+            return "docx"
+
+        raise ValueError(
+            "Type de fichier non supporté pour l'instant. "
+            "Formats acceptés: .txt, .pdf, .docx"
+        )
 
     def _hash_file(self, file_path: Path) -> str:
         hasher = hashlib.sha256()
@@ -129,11 +229,16 @@ class RagIngestService:
 
         return hasher.hexdigest()
 
+    def _hash_text(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
     def _safe_filename(self, filename: str) -> str:
         filename = os.path.basename(filename)
         filename = filename.replace(" ", "_")
         allowed = []
+
         for char in filename:
             if char.isalnum() or char in {".", "_", "-"}:
                 allowed.append(char)
+
         return "".join(allowed) or "uploaded_file"

@@ -142,3 +142,17 @@ class RagUploadResponse(BaseModel):
     chunks_count: int
     preview_chunks: list[dict] = Field(default_factory=list)
     parser_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RagUrlIngestPreviewResponse(BaseModel):
+    source_id: str
+    client_id: str
+    corpus_id: str
+    source_type: str
+    source_name: str
+    status: str
+    source_uri: str
+    chunks_path: str
+    chunks_count: int
+    preview_chunks: list[dict] = Field(default_factory=list)
+    parser_metadata: dict[str, Any] = Field(default_factory=dict)
