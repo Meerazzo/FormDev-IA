@@ -16,10 +16,14 @@ from schemas.rag import (
     RagUploadResponse,
     RagUrlIngestPreviewResponse,
     RagUrlIngestRequest,
+    RagIndexSourceResponse,
+    RagSearchRequest,
+    RagSearchResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.sources.source_service import RagSourceService
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
+from services.rag.indexing.indexing_service import RagIndexingService
 
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -163,6 +167,56 @@ async def list_sources(
         include_deleted=include_deleted,
     )
 
+@router.post(
+    "/sources/{source_id}/index",
+    response_model=RagIndexSourceResponse,
+    summary="Indexer une source RAG dans Qdrant",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def index_source(
+    request: Request,
+    source_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagIndexSourceResponse:
+    authenticate(api_key)
+
+    service = RagIndexingService(db)
+
+    try:
+        return service.index_source(source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur indexation RAG: {str(exc)}") from exc
+
+
+@router.post(
+    "/search",
+    response_model=RagSearchResponse,
+    summary="Recherche vectorielle dans les chunks RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def search_rag_chunks(
+    request: Request,
+    payload: RagSearchRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagSearchResponse:
+    authenticate(api_key)
+
+    service = RagIndexingService(db)
+
+    try:
+        return service.search(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            query=payload.query,
+            top_k=payload.top_k,
+            score_threshold=payload.score_threshold,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur recherche RAG: {str(exc)}") from exc
 
 @router.delete(
     "/sources/{source_id}",

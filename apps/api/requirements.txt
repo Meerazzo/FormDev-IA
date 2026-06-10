@@ -23,3 +23,4 @@ pymupdf
 python-docx
 trafilatura
 beautifulsoup4
+fastembed

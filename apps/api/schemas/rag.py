@@ -156,3 +156,39 @@ class RagUrlIngestPreviewResponse(BaseModel):
     chunks_count: int
     preview_chunks: list[dict] = Field(default_factory=list)
     parser_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RagIndexSourceResponse(BaseModel):
+    source_id: str
+    client_id: str
+    corpus_id: str
+    status: str
+    qdrant_collection: str
+    chunks_indexed: int
+
+
+class RagSearchRequest(BaseModel):
+    client_id: str
+    corpus_id: str = "default"
+    query: str
+    top_k: int = Field(default=5, ge=1, le=20)
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class RagSearchResult(BaseModel):
+    score: float
+    source_id: str | None = None
+    source_type: str | None = None
+    source_name: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    text: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RagSearchResponse(BaseModel):
+    client_id: str
+    corpus_id: str
+    query: str
+    results_count: int
+    results: list[RagSearchResult]

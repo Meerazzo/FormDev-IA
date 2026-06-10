@@ -158,6 +158,7 @@ services:
         condition: service_started
     volumes:
       - ../apps/api:/app
+      - rag_data_dev:/data/rag
     restart: unless-stopped
 
   worker-survey-dev:
@@ -238,6 +239,7 @@ services:
         condition: service_started
     volumes:
       - ../apps/api:/app
+      - rag_data_prod:/data/rag
     restart: unless-stopped
 
   worker-survey-prod:
@@ -287,3 +289,5 @@ volumes:
   mongo_graylog_data:
   opensearch_graylog_data:
   graylog_journal:
+  rag_data_dev:
+  rag_data_prod:
