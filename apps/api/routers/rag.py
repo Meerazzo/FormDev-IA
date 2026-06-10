@@ -7,15 +7,16 @@ Jour 1 :
 """
 
 
-from fastapi import APIRouter, Request, Security, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Request, Security, Body, Depends, HTTPException, Query, File, UploadFile
 from fastapi.security import APIKeyHeader
 
 from core.config import settings
 from core.rate_limit import limiter
 from core.security import authenticate
-from schemas.rag import RagHealthResponse, RagSourceResponse, RagUrlIngestRequest
+from schemas.rag import RagHealthResponse, RagSourceResponse, RagUrlIngestRequest, RagUploadResponse
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.sources.source_service import RagSourceService
+from services.rag.ingestion.ingest_service import RagIngestService
 
 from sqlalchemy.orm import Session
 
@@ -128,3 +129,33 @@ async def delete_source(
         raise HTTPException(status_code=404, detail="RAG source not found")
 
     return source
+
+
+@router.post(
+    "/sources/upload",
+    response_model=RagUploadResponse,
+    summary="Uploader un fichier TXT ou PDF et préparer les chunks RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def upload_source(
+    request: Request,
+    client_id: str,
+    corpus_id: str = "default",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagUploadResponse:
+    authenticate(api_key)
+
+    service = RagIngestService(db)
+
+    try:
+        return await service.ingest_upload_preview(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            upload_file=file,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    
+    

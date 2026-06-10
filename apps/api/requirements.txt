@@ -17,3 +17,6 @@ rq==2.8.0
 redis==7.4.0
 
 graypy==2.1.0
+
+python-multipart
+pymupdf
