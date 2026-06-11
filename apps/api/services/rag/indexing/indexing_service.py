@@ -5,7 +5,14 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from core.config import settings
-from schemas.rag import RagIndexSourceResponse, RagSearchResponse, RagSearchResult
+from schemas.rag import (
+    RagIndexSourceResponse,
+    RagSearchResponse,
+    RagSearchResult,
+    RagReindexSourceResponse,
+    RagCorpusResyncResponse,
+    RagCorpusResyncSourceResult,
+)
 from services.rag.embeddings.local_embedding_service import get_local_embedding_service
 from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
@@ -34,8 +41,7 @@ class RagIndexingService:
         if source.status == "deleted":
             raise ValueError("Impossible d'indexer une source supprimée")
 
-        chunks_path = self._find_chunks_path(source)
-        chunks = self._load_chunks(chunks_path)
+        chunks = self._load_chunks_for_source(source)
 
         if not chunks:
             raise ValueError("Aucun chunk à indexer pour cette source")
@@ -74,6 +80,117 @@ class RagIndexingService:
             self.db.commit()
             raise
 
+    def reindex_source(self, source_id: str) -> RagReindexSourceResponse:
+        """
+        Réindexe proprement une source :
+        1. supprime les anciens points Qdrant de cette source
+        2. relit le fichier .chunks.json
+        3. recalcule les embeddings
+        4. upsert les nouveaux points
+        """
+        source = self.source_repository.get_by_source_id(source_id)
+
+        if source is None:
+            raise ValueError("Source RAG introuvable")
+
+        if source.status == "deleted":
+            raise ValueError("Impossible de réindexer une source supprimée")
+
+        self.vector_store.delete_source(
+            client_id=source.client_id,
+            corpus_id=source.corpus_id,
+            source_id=source.source_id,
+        )
+
+        index_response = self.index_source(source_id)
+
+        return RagReindexSourceResponse(
+            source_id=index_response.source_id,
+            client_id=index_response.client_id,
+            corpus_id=index_response.corpus_id,
+            status=index_response.status,
+            qdrant_collection=index_response.qdrant_collection,
+            chunks_indexed=index_response.chunks_indexed,
+            message="Source réindexée avec succès",
+        )
+
+    def resync_corpus(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        include_pending: bool = True,
+        include_error: bool = True,
+    ) -> RagCorpusResyncResponse:
+        """
+        Resynchronise les sources d'un corpus.
+
+        Pour chaque source retenue :
+        - suppression des anciens points Qdrant
+        - réindexation depuis le .chunks.json
+        """
+        sources = self.source_repository.list_by_corpus(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            include_deleted=False,
+        )
+
+        eligible_sources = []
+
+        for source in sources:
+            if source.status == "indexed":
+                eligible_sources.append(source)
+            elif include_pending and source.status == "pending":
+                eligible_sources.append(source)
+            elif include_error and source.status == "error":
+                eligible_sources.append(source)
+
+        results: list[RagCorpusResyncSourceResult] = []
+
+        for source in eligible_sources:
+            previous_status = source.status
+
+            try:
+                response = self.reindex_source(source.source_id)
+
+                results.append(
+                    RagCorpusResyncSourceResult(
+                        source_id=source.source_id,
+                        source_name=source.source_name,
+                        previous_status=previous_status,
+                        new_status=response.status,
+                        chunks_indexed=response.chunks_indexed,
+                        success=True,
+                    )
+                )
+
+            except Exception as exc:
+                self.db.refresh(source)
+
+                results.append(
+                    RagCorpusResyncSourceResult(
+                        source_id=source.source_id,
+                        source_name=source.source_name,
+                        previous_status=previous_status,
+                        new_status=source.status,
+                        chunks_indexed=0,
+                        success=False,
+                        error_message=str(exc),
+                    )
+                )
+
+        indexed_sources = sum(1 for result in results if result.success)
+        failed_sources = sum(1 for result in results if not result.success)
+
+        return RagCorpusResyncResponse(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            total_sources=len(results),
+            indexed_sources=indexed_sources,
+            failed_sources=failed_sources,
+            results=results,
+        )
+
     def search(
         self,
         *,
@@ -104,6 +221,10 @@ class RagIndexingService:
             ],
         )
 
+    def _load_chunks_for_source(self, source) -> list[dict]:
+        chunks_path = self._find_chunks_path(source)
+        return self._load_chunks(chunks_path)
+
     def _load_chunks(self, chunks_path: Path) -> list[dict]:
         with open(chunks_path, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -116,9 +237,6 @@ class RagIndexingService:
     def _find_chunks_path(self, source) -> Path:
         """
         Retrouve le fichier .chunks.json associé à une source.
-
-        Pour les fichiers uploadés, on peut déduire le chemin depuis source_uri.
-        Pour les URLs, on recherche le fichier qui contient le bon source_id.
         """
         metadata = source.metadata_json or {}
 

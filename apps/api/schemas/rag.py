@@ -74,13 +74,22 @@ class RagUrlIngestRequest(BaseModel):
 
 
 class RagChatRequest(BaseModel):
-    """Demande de conversation RAG."""
+    client_id: str
+    corpus_id: str = "default"
+    question: str
+    top_k: int = Field(default=5, ge=1, le=10)
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    temperature: float = Field(default=0.2, ge=0.0, le=1.5)
+    max_tokens: int = Field(default=700, ge=64, le=2000)
 
-    client_id: str = Field(..., min_length=1)
-    question: str = Field(..., min_length=1)
-    corpus_id: str = Field(default="default", min_length=1)
-    conversation_id: str | None = None
-    top_k: int = Field(default=5, ge=1, le=20)
+class RagChatSource(BaseModel):
+    source_id: str | None = None
+    source_type: str | None = None
+    source_name: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    score: float | None = None
+    text: str | None = None
 
 
 class RagSourceCitation(BaseModel):
@@ -98,10 +107,12 @@ class RagSourceCitation(BaseModel):
 class RagChatResponse(BaseModel):
     """Réponse générée par le chatbot RAG."""
 
+    client_id: str
+    corpus_id: str
+    question: str
     answer: str
-    sources: list[RagSourceCitation] = Field(default_factory=list)
-    confidence: Literal["low", "medium", "high"] | None = None
-    conversation_id: str | None = None
+    sources: list[RagChatSource] = Field(default_factory=list)
+    used_chunks_count: int
 
 
 class RagResyncSourceInput(BaseModel):
@@ -192,3 +203,81 @@ class RagSearchResponse(BaseModel):
     query: str
     results_count: int
     results: list[RagSearchResult]
+
+
+class RagChatSource(BaseModel):
+    source_id: str | None = None
+    source_type: str | None = None
+    source_name: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    score: float | None = None
+    text: str | None = None
+
+
+class RagChatRequest(BaseModel):
+    client_id: str
+    corpus_id: str = "default"
+    question: str
+    top_k: int = Field(default=5, ge=1, le=10)
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    temperature: float = Field(default=0.2, ge=0.0, le=1.5)
+    max_tokens: int = Field(default=700, ge=64, le=2000)
+
+
+class RagChatResponse(BaseModel):
+    client_id: str
+    corpus_id: str
+    question: str
+    answer: str
+    sources: list[RagChatSource] = Field(default_factory=list)
+    used_chunks_count: int
+    retrieval_confidence: str = "none"
+    top_score: float | None = None
+    retrieval_candidates_count: int = 0
+    filtered_chunks_count: int = 0
+
+
+class RagDeleteSourceResponse(BaseModel):
+    source_id: str
+    client_id: str
+    corpus_id: str
+    status: str
+    qdrant_points_deleted: bool
+    message: str
+
+
+class RagReindexSourceResponse(BaseModel):
+    source_id: str
+    client_id: str
+    corpus_id: str
+    status: str
+    qdrant_collection: str
+    chunks_indexed: int
+    message: str
+
+
+class RagCorpusResyncRequest(BaseModel):
+    client_id: str
+    corpus_id: str = "default"
+    include_pending: bool = True
+    include_error: bool = True
+
+
+class RagCorpusResyncSourceResult(BaseModel):
+    source_id: str
+    source_name: str | None = None
+    previous_status: str | None = None
+    new_status: str | None = None
+    chunks_indexed: int = 0
+    success: bool
+    error_message: str | None = None
+
+
+class RagCorpusResyncResponse(BaseModel):
+    client_id: str
+    corpus_id: str
+    total_sources: int
+    indexed_sources: int
+    failed_sources: int
+    results: list[RagCorpusResyncSourceResult]

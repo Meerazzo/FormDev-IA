@@ -19,12 +19,19 @@ from schemas.rag import (
     RagIndexSourceResponse,
     RagSearchRequest,
     RagSearchResponse,
+    RagChatRequest,
+    RagChatResponse,
+    RagDeleteSourceResponse,
+    RagReindexSourceResponse,
+    RagCorpusResyncRequest,
+    RagCorpusResyncResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.sources.source_service import RagSourceService
+from services.rag.sources.source_lifecycle_service import RagSourceLifecycleService
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.indexing.indexing_service import RagIndexingService
-
+from services.rag.chat.rag_service import RagService
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
@@ -218,10 +225,90 @@ async def search_rag_chunks(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erreur recherche RAG: {str(exc)}") from exc
 
+
+@router.post(
+    "/chat",
+    response_model=RagChatResponse,
+    summary="Générer une réponse RAG avec sources",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def rag_chat(
+    request: Request,
+    payload: RagChatRequest = Body(...),
+    api_key: str | None = Security(api_key_header),
+) -> RagChatResponse:
+    authenticate(api_key)
+
+    service = RagService()
+
+    try:
+        return service.answer(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            question=payload.question,
+            top_k=payload.top_k,
+            score_threshold=payload.score_threshold,
+            temperature=payload.temperature,
+            max_tokens=payload.max_tokens,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur génération RAG: {str(exc)}") from exc
+
+@router.post(
+    "/sources/{source_id}/reindex",
+    response_model=RagReindexSourceResponse,
+    summary="Réindexer une source RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def reindex_source(
+    request: Request,
+    source_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagReindexSourceResponse:
+    authenticate(api_key)
+
+    service = RagIndexingService(db)
+
+    try:
+        return service.reindex_source(source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur réindexation RAG: {str(exc)}") from exc
+
+
+@router.post(
+    "/corpora/resync",
+    response_model=RagCorpusResyncResponse,
+    summary="Resynchroniser un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def resync_corpus(
+    request: Request,
+    payload: RagCorpusResyncRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusResyncResponse:
+    authenticate(api_key)
+
+    service = RagIndexingService(db)
+
+    try:
+        return service.resync_corpus(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            include_pending=payload.include_pending,
+            include_error=payload.include_error,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur resync corpus RAG: {str(exc)}") from exc
+
+
 @router.delete(
     "/sources/{source_id}",
-    response_model=RagSourceResponse,
-    summary="Marquer une source RAG comme supprimée",
+    response_model=RagDeleteSourceResponse,
+    summary="Supprimer une source RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def delete_source(
@@ -229,13 +316,14 @@ async def delete_source(
     source_id: str,
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
-) -> RagSourceResponse:
+) -> RagDeleteSourceResponse:
     authenticate(api_key)
 
-    service = RagSourceService(db)
-    source = service.mark_deleted(source_id)
+    service = RagSourceLifecycleService(db)
 
-    if source is None:
-        raise HTTPException(status_code=404, detail="RAG source not found")
-
-    return source
+    try:
+        return service.delete_source(source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur suppression source RAG: {str(exc)}") from exc

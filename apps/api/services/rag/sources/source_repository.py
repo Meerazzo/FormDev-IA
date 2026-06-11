@@ -108,3 +108,20 @@ class RagSourceRepository:
         self.db.refresh(source)
 
         return source
+
+    def list_by_corpus(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        include_deleted: bool = False,
+    ):
+        query = self.db.query(RagSource).filter(
+            RagSource.client_id == client_id,
+            RagSource.corpus_id == corpus_id,
+        )
+
+        if not include_deleted:
+            query = query.filter(RagSource.status != "deleted")
+
+        return query.order_by(RagSource.created_at.desc()).all()
