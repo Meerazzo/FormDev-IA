@@ -9,6 +9,7 @@ et le Full Resync.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -281,3 +282,33 @@ class RagCorpusResyncResponse(BaseModel):
     indexed_sources: int
     failed_sources: int
     results: list[RagCorpusResyncSourceResult]
+
+
+
+class RagAsyncJobResponse(BaseModel):
+    job_id: str
+    rq_job_id: str | None = None
+    client_id: str
+    corpus_id: str
+    source_id: str | None = None
+    job_type: str
+    status: str
+    message: str
+
+
+class RagJobStatusResponse(BaseModel):
+    job_id: str
+    rq_job_id: str | None = None
+    client_id: str
+    corpus_id: str
+    source_id: str | None = None
+    job_type: str
+    status: str
+    total_sources: int
+    processed_sources: int
+    failed_sources: int
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None

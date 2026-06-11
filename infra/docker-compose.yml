@@ -136,6 +136,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_DB=0
       - RQ_SURVEY_QUEUE=${RQ_SURVEY_DEV_QUEUE}
+      - RQ_RAG_QUEUE=${RQ_RAG_DEV_QUEUE}
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
@@ -200,6 +201,48 @@ services:
     command: ["python", "-m", "workers.survey_worker"]
     restart: unless-stopped
 
+
+  worker-rag-dev:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      - VLLM_BASE_URL=http://inference:${VLLM_PORT}
+      - API_KEYS=${API_KEYS}
+      - RATE_LIMIT_RPM=${RATE_LIMIT_RPM}
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-dev:5432/${POSTGRES_DEV_DB}
+      - QDRANT_URL=http://qdrant-dev:6333
+      - QDRANT_COLLECTION=${QDRANT_DEV_COLLECTION}
+      - QDRANT_EMBEDDING_MODEL=${QDRANT_EMBEDDING_MODEL}
+      - QDRANT_VECTOR_SIZE=${QDRANT_VECTOR_SIZE}
+      - REDIS_HOST=redis-dev
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - RQ_SURVEY_QUEUE=${RQ_SURVEY_DEV_QUEUE}
+      - RQ_RAG_QUEUE=${RQ_RAG_DEV_QUEUE}
+      - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
+      - RQ_RESULT_TTL=${RQ_RESULT_TTL}
+      - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - APP_ENV=dev
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      inference:
+        condition: service_started
+      qdrant-dev:
+        condition: service_started
+      redis-dev:
+        condition: service_started
+    volumes:
+      - ../apps/api:/app
+      - rag_data_dev:/data/rag
+    command: ["python", "-m", "workers.rag_worker"]
+    restart: unless-stopped
+
   api-prod:
     build:
       context: ..
@@ -217,6 +260,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_DB=0
       - RQ_SURVEY_QUEUE=${RQ_SURVEY_PROD_QUEUE}
+      - RQ_RAG_QUEUE=${RQ_RAG_PROD_QUEUE}
       - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
       - RQ_RESULT_TTL=${RQ_RESULT_TTL}
       - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
@@ -279,6 +323,48 @@ services:
     volumes:
       - ../apps/api:/app
     command: ["python", "-m", "workers.survey_worker"]
+    restart: unless-stopped
+
+
+  worker-rag-prod:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      - VLLM_BASE_URL=http://inference:${VLLM_PORT}
+      - API_KEYS=${API_KEYS}
+      - RATE_LIMIT_RPM=${RATE_LIMIT_RPM}
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-prod:5432/${POSTGRES_PROD_DB}
+      - QDRANT_URL=http://qdrant-prod:6333
+      - QDRANT_COLLECTION=${QDRANT_PROD_COLLECTION}
+      - QDRANT_EMBEDDING_MODEL=${QDRANT_EMBEDDING_MODEL}
+      - QDRANT_VECTOR_SIZE=${QDRANT_VECTOR_SIZE}
+      - REDIS_HOST=redis-prod
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - RQ_SURVEY_QUEUE=${RQ_SURVEY_PROD_QUEUE}
+      - RQ_RAG_QUEUE=${RQ_RAG_PROD_QUEUE}
+      - RQ_DEFAULT_TIMEOUT=${RQ_DEFAULT_TIMEOUT}
+      - RQ_RESULT_TTL=${RQ_RESULT_TTL}
+      - RQ_FAILURE_TTL=${RQ_FAILURE_TTL}
+      - APP_ENV=prod
+      - GRAYLOG_ENABLED=${GRAYLOG_ENABLED:-false}
+      - GRAYLOG_HOST=graylog
+      - GRAYLOG_PORT=12201
+      - GRAYLOG_FACILITY=formdev-ia
+    depends_on:
+      postgres-prod:
+        condition: service_healthy
+      inference:
+        condition: service_started
+      qdrant-prod:
+        condition: service_started
+      redis-prod:
+        condition: service_started
+    volumes:
+      - ../apps/api:/app
+      - rag_data_prod:/data/rag
+    command: ["python", "-m", "workers.rag_worker"]
     restart: unless-stopped
 
 volumes:

@@ -25,6 +25,8 @@ from schemas.rag import (
     RagReindexSourceResponse,
     RagCorpusResyncRequest,
     RagCorpusResyncResponse,
+    RagAsyncJobResponse,
+    RagJobStatusResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.sources.source_service import RagSourceService
@@ -32,6 +34,13 @@ from services.rag.sources.source_lifecycle_service import RagSourceLifecycleServ
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.indexing.indexing_service import RagIndexingService
 from services.rag.chat.rag_service import RagService
+from services.rag.jobs.job_repository import RagJobRepository
+from services.rag.sources.source_repository import RagSourceRepository
+from services.rag.queue.rag_queue import (
+    enqueue_rag_index_job,
+    enqueue_rag_reindex_job,
+    enqueue_rag_resync_job,
+)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 RATE_LIMIT_RPM = settings.RATE_LIMIT_RPM
@@ -303,6 +312,219 @@ async def resync_corpus(
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erreur resync corpus RAG: {str(exc)}") from exc
+
+
+
+@router.post(
+    "/sources/{source_id}/index-async",
+    response_model=RagAsyncJobResponse,
+    summary="Indexer une source RAG en tâche asynchrone",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def index_source_async(
+    request: Request,
+    source_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagAsyncJobResponse:
+    authenticate(api_key)
+
+    source_repository = RagSourceRepository(db)
+    source = source_repository.get_by_source_id(source_id)
+
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source RAG introuvable")
+
+    if source.status == "deleted":
+        raise HTTPException(status_code=400, detail="Impossible d'indexer une source supprimée")
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.create_job(
+        client_id=source.client_id,
+        corpus_id=source.corpus_id,
+        source_id=source.source_id,
+        job_type="index",
+        total_sources=1,
+        metadata={
+            "source_name": source.source_name,
+            "source_type": source.source_type,
+        },
+    )
+
+    rq_job_id = enqueue_rag_index_job(
+        source_id=source.source_id,
+        job_id=job.job_id,
+    )
+
+    job_repository.attach_rq_job_id(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+    )
+
+    return RagAsyncJobResponse(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+        client_id=job.client_id,
+        corpus_id=job.corpus_id,
+        source_id=job.source_id,
+        job_type=job.job_type,
+        status=job.status,
+        message="Job d'indexation RAG ajouté à la queue",
+    )
+
+
+@router.post(
+    "/sources/{source_id}/reindex-async",
+    response_model=RagAsyncJobResponse,
+    summary="Réindexer une source RAG en tâche asynchrone",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def reindex_source_async(
+    request: Request,
+    source_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagAsyncJobResponse:
+    authenticate(api_key)
+
+    source_repository = RagSourceRepository(db)
+    source = source_repository.get_by_source_id(source_id)
+
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source RAG introuvable")
+
+    if source.status == "deleted":
+        raise HTTPException(status_code=400, detail="Impossible de réindexer une source supprimée")
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.create_job(
+        client_id=source.client_id,
+        corpus_id=source.corpus_id,
+        source_id=source.source_id,
+        job_type="reindex",
+        total_sources=1,
+        metadata={
+            "source_name": source.source_name,
+            "source_type": source.source_type,
+        },
+    )
+
+    rq_job_id = enqueue_rag_reindex_job(
+        source_id=source.source_id,
+        job_id=job.job_id,
+    )
+
+    job_repository.attach_rq_job_id(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+    )
+
+    return RagAsyncJobResponse(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+        client_id=job.client_id,
+        corpus_id=job.corpus_id,
+        source_id=job.source_id,
+        job_type=job.job_type,
+        status=job.status,
+        message="Job de réindexation RAG ajouté à la queue",
+    )
+
+
+@router.post(
+    "/corpora/resync-async",
+    response_model=RagAsyncJobResponse,
+    summary="Resynchroniser un corpus RAG en tâche asynchrone",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def resync_corpus_async(
+    request: Request,
+    payload: RagCorpusResyncRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagAsyncJobResponse:
+    authenticate(api_key)
+
+    source_repository = RagSourceRepository(db)
+    sources = source_repository.list_by_corpus(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        include_deleted=False,
+    )
+
+    eligible_sources = []
+
+    for source in sources:
+        if source.status == "indexed":
+            eligible_sources.append(source)
+        elif payload.include_pending and source.status == "pending":
+            eligible_sources.append(source)
+        elif payload.include_error and source.status == "error":
+            eligible_sources.append(source)
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.create_job(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        source_id=None,
+        job_type="resync",
+        total_sources=len(eligible_sources),
+        metadata={
+            "include_pending": payload.include_pending,
+            "include_error": payload.include_error,
+            "eligible_source_ids": [
+                source.source_id
+                for source in eligible_sources
+            ],
+        },
+    )
+
+    rq_job_id = enqueue_rag_resync_job(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        job_id=job.job_id,
+        include_pending=payload.include_pending,
+        include_error=payload.include_error,
+    )
+
+    job_repository.attach_rq_job_id(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+    )
+
+    return RagAsyncJobResponse(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+        client_id=job.client_id,
+        corpus_id=job.corpus_id,
+        source_id=None,
+        job_type=job.job_type,
+        status=job.status,
+        message="Job de resynchronisation RAG ajouté à la queue",
+    )
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=RagJobStatusResponse,
+    summary="Consulter le statut d'un job RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def get_rag_job_status(
+    request: Request,
+    job_id: str,
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagJobStatusResponse:
+    authenticate(api_key)
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.get_by_job_id(job_id)
+
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job RAG introuvable")
+
+    return job_repository.to_response(job)
 
 
 @router.delete(
