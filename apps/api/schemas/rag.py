@@ -290,6 +290,23 @@ class RagDeleteSourceResponse(BaseModel):
     message: str
 
 
+
+class RagConversationUpdateRequest(BaseModel):
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(default="default", min_length=1)
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class RagConversationDeleteResponse(BaseModel):
+    conversation_id: str
+    client_id: str
+    corpus_id: str
+    deleted: bool
+    message: str
+
+
+
+
 class RagReindexSourceResponse(BaseModel):
     source_id: str
     client_id: str

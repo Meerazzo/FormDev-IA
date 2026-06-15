@@ -13,12 +13,13 @@ class RagService:
     Service principal de réponse RAG.
 
     Étapes :
-    1. Embed la question.
-    2. Recherche davantage de candidats dans Qdrant.
-    3. Filtre et diversifie les chunks.
-    4. Construit un prompt RAG strict.
-    5. Appelle vLLM.
-    6. Retourne réponse + sources + informations de retrieval.
+    1. Construit une requête de retrieval avec la question et l'historique court.
+    2. Embed la requête.
+    3. Recherche davantage de candidats dans Qdrant.
+    4. Filtre et diversifie les chunks.
+    5. Construit un prompt RAG strict.
+    6. Appelle vLLM.
+    7. Retourne réponse + sources + informations de retrieval.
     """
 
     def __init__(self) -> None:
@@ -37,8 +38,14 @@ class RagService:
         score_threshold: float | None,
         temperature: float,
         max_tokens: int,
+        conversation_history: list[dict] | None = None,
     ) -> RagChatResponse:
-        query_vector = self.embedding_service.embed_query(question)
+        retrieval_query = self._build_retrieval_query(
+            question=question,
+            conversation_history=conversation_history or [],
+        )
+
+        query_vector = self.embedding_service.embed_query(retrieval_query)
 
         candidate_top_k = max(
             top_k,
@@ -82,6 +89,7 @@ class RagService:
             question=question,
             context_chunks=chunks,
             retrieval_confidence=retrieval["retrieval_confidence"],
+            conversation_history=conversation_history or [],
         )
 
         answer_text = self._call_vllm(
@@ -112,6 +120,32 @@ class RagService:
             top_score=retrieval["top_score"],
             retrieval_candidates_count=retrieval["initial_candidates_count"],
             filtered_chunks_count=retrieval["filtered_candidates_count"],
+        )
+
+    def _build_retrieval_query(
+        self,
+        *,
+        question: str,
+        conversation_history: list[dict],
+    ) -> str:
+        recent_user_messages = [
+            (message.get("content") or "").strip()
+            for message in conversation_history
+            if message.get("role") == "user" and message.get("content")
+        ]
+
+        recent_user_messages = recent_user_messages[-2:]
+
+        if not recent_user_messages:
+            return question
+
+        history_text = "\n".join(recent_user_messages)
+
+        return (
+            "Contexte récent de la conversation :\n"
+            f"{history_text}\n\n"
+            "Question actuelle :\n"
+            f"{question}"
         )
 
     def _call_vllm(

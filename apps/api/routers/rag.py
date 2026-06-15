@@ -31,6 +31,8 @@ from schemas.rag import (
     RagConversationResponse,
     RagConversationListResponse,
     RagMessageListResponse,
+    RagConversationUpdateRequest,
+    RagConversationDeleteResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.sources.source_service import RagSourceService
@@ -329,6 +331,70 @@ async def get_rag_conversation(
     return repository.to_conversation_response(conversation)
 
 
+@router.patch(
+    "/conversations/{conversation_id}",
+    response_model=RagConversationResponse,
+    summary="Renommer une conversation RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def update_rag_conversation(
+    request: Request,
+    conversation_id: str,
+    payload: RagConversationUpdateRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagConversationResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    conversation = repository.update_title(
+        conversation_id=conversation_id,
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        title=payload.title,
+    )
+
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
+
+    return repository.to_conversation_response(conversation)
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=RagConversationDeleteResponse,
+    summary="Supprimer une conversation RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def delete_rag_conversation(
+    request: Request,
+    conversation_id: str,
+    client_id: str = Query(...),
+    corpus_id: str = Query(default="default"),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagConversationDeleteResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    deleted = repository.delete_conversation(
+        conversation_id=conversation_id,
+        client_id=client_id,
+        corpus_id=corpus_id,
+    )
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
+
+    return RagConversationDeleteResponse(
+        conversation_id=conversation_id,
+        client_id=client_id,
+        corpus_id=corpus_id,
+        deleted=True,
+        message="Conversation RAG supprimée",
+    )
+
+
 @router.get(
     "/conversations/{conversation_id}/messages",
     response_model=RagMessageListResponse,
@@ -409,6 +475,12 @@ async def rag_chat(
             title=title,
         )
 
+    recent_messages = conversation_repository.get_recent_messages(
+        conversation_id=conversation.conversation_id,
+        limit=6,
+    )
+    conversation_history = conversation_repository.to_history_payload(recent_messages)
+
     conversation_repository.create_message(
         conversation_id=conversation.conversation_id,
         role="user",
@@ -430,6 +502,7 @@ async def rag_chat(
             score_threshold=payload.score_threshold,
             temperature=payload.temperature,
             max_tokens=payload.max_tokens,
+            conversation_history=conversation_history,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erreur génération RAG: {str(exc)}") from exc
@@ -450,6 +523,7 @@ async def rag_chat(
             "top_score": response.top_score,
             "retrieval_candidates_count": response.retrieval_candidates_count,
             "filtered_chunks_count": response.filtered_chunks_count,
+            "conversation_history_messages_count": len(conversation_history),
         },
     )
 

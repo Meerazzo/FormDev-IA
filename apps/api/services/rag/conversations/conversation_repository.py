@@ -86,6 +86,56 @@ class RagConversationRepository:
             .all()
         )
 
+    def update_title(
+        self,
+        *,
+        conversation_id: str,
+        client_id: str,
+        corpus_id: str,
+        title: str,
+    ) -> RagConversation | None:
+        conversation = self.get_for_client(
+            conversation_id=conversation_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if conversation is None:
+            return None
+
+        conversation.title = title
+        conversation.updated_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(conversation)
+
+        return conversation
+
+    def delete_conversation(
+        self,
+        *,
+        conversation_id: str,
+        client_id: str,
+        corpus_id: str,
+    ) -> bool:
+        conversation = self.get_for_client(
+            conversation_id=conversation_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if conversation is None:
+            return False
+
+        self.db.query(RagMessage).filter(
+            RagMessage.conversation_id == conversation_id
+        ).delete(synchronize_session=False)
+
+        self.db.delete(conversation)
+        self.db.commit()
+
+        return True
+
     def create_message(
         self,
         *,
@@ -130,6 +180,22 @@ class RagConversationRepository:
             .all()
         )
 
+    def get_recent_messages(
+        self,
+        *,
+        conversation_id: str,
+        limit: int = 6,
+    ) -> list[RagMessage]:
+        messages = (
+            self.db.query(RagMessage)
+            .filter(RagMessage.conversation_id == conversation_id)
+            .order_by(RagMessage.created_at.desc(), RagMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return list(reversed(messages))
+
     def count_messages(self, conversation_id: str) -> int:
         return (
             self.db.query(RagMessage)
@@ -164,3 +230,16 @@ class RagConversationRepository:
             metadata=message.metadata_json or {},
             created_at=message.created_at,
         )
+
+    def to_history_payload(
+        self,
+        messages: list[RagMessage],
+    ) -> list[dict]:
+        return [
+            {
+                "role": message.role,
+                "content": message.content,
+            }
+            for message in messages
+            if message.role in {"user", "assistant"} and message.content
+        ]
