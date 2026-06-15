@@ -27,6 +27,10 @@ from schemas.rag import (
     RagCorpusResyncResponse,
     RagAsyncJobResponse,
     RagJobStatusResponse,
+    RagConversationCreateRequest,
+    RagConversationResponse,
+    RagConversationListResponse,
+    RagMessageListResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.sources.source_service import RagSourceService
@@ -35,6 +39,7 @@ from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.indexing.indexing_service import RagIndexingService
 from services.rag.chat.rag_service import RagService
 from services.rag.jobs.job_repository import RagJobRepository
+from services.rag.conversations.conversation_repository import RagConversationRepository
 from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.queue.rag_queue import (
     enqueue_rag_index_job,
@@ -236,22 +241,188 @@ async def search_rag_chunks(
 
 
 @router.post(
+    "/conversations",
+    response_model=RagConversationResponse,
+    summary="Créer une conversation RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def create_rag_conversation(
+    request: Request,
+    payload: RagConversationCreateRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagConversationResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    conversation = repository.create_conversation(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        title=payload.title,
+    )
+
+    return repository.to_conversation_response(conversation)
+
+
+@router.get(
+    "/conversations",
+    response_model=RagConversationListResponse,
+    summary="Lister les conversations RAG d'un client",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_rag_conversations(
+    request: Request,
+    client_id: str = Query(...),
+    corpus_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagConversationListResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    conversations = repository.list_conversations(
+        client_id=client_id,
+        corpus_id=corpus_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return RagConversationListResponse(
+        client_id=client_id,
+        corpus_id=corpus_id,
+        conversations_count=len(conversations),
+        conversations=[
+            repository.to_conversation_response(conversation)
+            for conversation in conversations
+        ],
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=RagConversationResponse,
+    summary="Récupérer une conversation RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def get_rag_conversation(
+    request: Request,
+    conversation_id: str,
+    client_id: str = Query(...),
+    corpus_id: str = Query(default="default"),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagConversationResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    conversation = repository.get_for_client(
+        conversation_id=conversation_id,
+        client_id=client_id,
+        corpus_id=corpus_id,
+    )
+
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
+
+    return repository.to_conversation_response(conversation)
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=RagMessageListResponse,
+    summary="Lister les messages d'une conversation RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_rag_conversation_messages(
+    request: Request,
+    conversation_id: str,
+    client_id: str = Query(...),
+    corpus_id: str = Query(default="default"),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagMessageListResponse:
+    authenticate(api_key)
+
+    repository = RagConversationRepository(db)
+    conversation = repository.get_for_client(
+        conversation_id=conversation_id,
+        client_id=client_id,
+        corpus_id=corpus_id,
+    )
+
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
+
+    messages = repository.list_messages(
+        conversation_id=conversation_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return RagMessageListResponse(
+        conversation_id=conversation_id,
+        messages_count=len(messages),
+        messages=[
+            repository.to_message_response(message)
+            for message in messages
+        ],
+    )
+
+
+@router.post(
     "/chat",
     response_model=RagChatResponse,
-    summary="Générer une réponse RAG avec sources",
+    summary="Générer une réponse RAG avec sources et historique",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def rag_chat(
     request: Request,
     payload: RagChatRequest = Body(...),
+    db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagChatResponse:
     authenticate(api_key)
 
+    conversation_repository = RagConversationRepository(db)
+
+    if payload.conversation_id:
+        conversation = conversation_repository.get_for_client(
+            conversation_id=payload.conversation_id,
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+        )
+
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
+    else:
+        title = payload.question.strip()
+        if len(title) > 80:
+            title = title[:77].rstrip() + "..."
+
+        conversation = conversation_repository.create_conversation(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            title=title,
+        )
+
+    conversation_repository.create_message(
+        conversation_id=conversation.conversation_id,
+        role="user",
+        content=payload.question,
+        metadata={
+            "top_k": payload.top_k,
+            "score_threshold": payload.score_threshold,
+        },
+    )
+
     service = RagService()
 
     try:
-        return service.answer(
+        response = service.answer(
             client_id=payload.client_id,
             corpus_id=payload.corpus_id,
             question=payload.question,
@@ -262,6 +433,32 @@ async def rag_chat(
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erreur génération RAG: {str(exc)}") from exc
+
+    sources_payload = [
+        source.model_dump()
+        for source in response.sources
+    ]
+
+    conversation_repository.create_message(
+        conversation_id=conversation.conversation_id,
+        role="assistant",
+        content=response.answer,
+        sources=sources_payload,
+        metadata={
+            "used_chunks_count": response.used_chunks_count,
+            "retrieval_confidence": response.retrieval_confidence,
+            "top_score": response.top_score,
+            "retrieval_candidates_count": response.retrieval_candidates_count,
+            "filtered_chunks_count": response.filtered_chunks_count,
+        },
+    )
+
+    return response.model_copy(
+        update={
+            "conversation_id": conversation.conversation_id,
+        }
+    )
+
 
 @router.post(
     "/sources/{source_id}/reindex",

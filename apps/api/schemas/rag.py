@@ -219,6 +219,7 @@ class RagChatSource(BaseModel):
 class RagChatRequest(BaseModel):
     client_id: str
     corpus_id: str = "default"
+    conversation_id: str | None = None
     question: str
     top_k: int = Field(default=5, ge=1, le=10)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -227,6 +228,7 @@ class RagChatRequest(BaseModel):
 
 
 class RagChatResponse(BaseModel):
+    conversation_id: str | None = None
     client_id: str
     corpus_id: str
     question: str
@@ -237,6 +239,46 @@ class RagChatResponse(BaseModel):
     top_score: float | None = None
     retrieval_candidates_count: int = 0
     filtered_chunks_count: int = 0
+
+
+
+class RagConversationCreateRequest(BaseModel):
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(default="default", min_length=1)
+    title: str | None = None
+
+
+class RagConversationResponse(BaseModel):
+    conversation_id: str
+    client_id: str
+    corpus_id: str
+    title: str | None = None
+    messages_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RagConversationListResponse(BaseModel):
+    client_id: str
+    corpus_id: str | None = None
+    conversations_count: int
+    conversations: list[RagConversationResponse]
+
+
+class RagMessageResponse(BaseModel):
+    id: int
+    conversation_id: str
+    role: str
+    content: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class RagMessageListResponse(BaseModel):
+    conversation_id: str
+    messages_count: int
+    messages: list[RagMessageResponse]
 
 
 class RagDeleteSourceResponse(BaseModel):
