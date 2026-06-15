@@ -11,6 +11,7 @@ from core.rate_limit import limiter
 from core.security import authenticate
 from db.session import get_db
 from schemas.rag import (
+    RagCorpusListResponse,
     RagHealthResponse,
     RagSourceResponse,
     RagUploadResponse,
@@ -35,11 +36,13 @@ from schemas.rag import (
     RagConversationDeleteResponse,
 )
 from services.rag.ingestion.ingest_service import RagIngestService
+from services.rag.ingestion.exceptions import DuplicateSourceError
 from services.rag.sources.source_service import RagSourceService
 from services.rag.sources.source_lifecycle_service import RagSourceLifecycleService
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.indexing.indexing_service import RagIndexingService
 from services.rag.chat.rag_service import RagService
+from services.rag.corpora.corpus_repository import RagCorpusRepository
 from services.rag.jobs.job_repository import RagJobRepository
 from services.rag.conversations.conversation_repository import RagConversationRepository
 from services.rag.sources.source_repository import RagSourceRepository
@@ -111,6 +114,8 @@ async def upload_source_async(
             corpus_id=corpus_id,
             upload_file=file,
         )
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -175,6 +180,8 @@ async def upload_source(
             corpus_id=corpus_id,
             upload_file=file,
         )
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -220,13 +227,16 @@ async def ingest_url_source_async(
 
     ingest_service = RagIngestService(db)
 
-    source = ingest_service.create_url_source_for_async(
-        client_id=payload.client_id,
-        corpus_id=payload.corpus_id,
-        url=str(payload.url),
-        source_name=payload.source_name,
-        metadata=payload.metadata,
-    )
+    try:
+        source = ingest_service.create_url_source_for_async(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            url=str(payload.url),
+            source_name=payload.source_name,
+            metadata=payload.metadata,
+        )
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
     job_repository = RagJobRepository(db)
     job = job_repository.create_job(
@@ -289,10 +299,66 @@ async def ingest_url_source(
             source_name=payload.source_name,
             metadata=payload.metadata,
         )
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Erreur ingestion URL: {str(exc)}") from exc
+
+
+
+@router.get(
+    "/corpora",
+    response_model=RagCorpusListResponse,
+    summary="Lister les corpus RAG d'un client",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_rag_corpora(
+    request: Request,
+    client_id: str = Query(...),
+    include_empty: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusListResponse:
+    authenticate(api_key)
+
+    repository = RagCorpusRepository(db)
+    corpora = repository.list_by_client(
+        client_id=client_id,
+        include_empty=include_empty,
+    )
+
+    return RagCorpusListResponse(
+        client_id=client_id,
+        corpora_count=len(corpora),
+        corpora=corpora,
+    )
+
+
+@router.get(
+    "/corpora/{corpus_id}/sources",
+    response_model=list[RagSourceResponse],
+    summary="Lister les sources d'un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_rag_corpus_sources(
+    request: Request,
+    corpus_id: str,
+    client_id: str = Query(...),
+    include_deleted: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> list[RagSourceResponse]:
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+
+    return service.list_sources(
+        client_id=client_id,
+        corpus_id=corpus_id,
+        include_deleted=include_deleted,
+    )
 
 
 @router.get(
@@ -336,6 +402,8 @@ async def index_source(
 
     try:
         return service.index_source(source_id)
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -680,6 +748,8 @@ async def reindex_source(
 
     try:
         return service.reindex_source(source_id)
+    except DuplicateSourceError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

@@ -47,6 +47,31 @@ class RagHealthResponse(BaseModel):
     message: str | None = None
 
 
+
+class RagCorpusResponse(BaseModel):
+    """Vue API d'un corpus RAG."""
+
+    client_id: str
+    corpus_id: str
+    name: str | None = None
+    description: str | None = None
+    is_active: bool = True
+    sources_count: int = 0
+    indexed_sources_count: int = 0
+    pending_sources_count: int = 0
+    error_sources_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RagCorpusListResponse(BaseModel):
+    """Liste des corpus RAG d'un client."""
+
+    client_id: str
+    corpora_count: int
+    corpora: list[RagCorpusResponse]
+
+
 class RagSourceResponse(BaseModel):
     """Vue API d'une source documentaire."""
 

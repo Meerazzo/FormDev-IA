@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from db.models.rag_source import RagSource
+from services.rag.corpora.corpus_repository import RagCorpusRepository
 
 
 class RagSourceRepository:
@@ -27,6 +29,11 @@ class RagSourceRepository:
         metadata_json: dict | None = None,
         content_hash: str | None = None,
     ) -> RagSource:
+        RagCorpusRepository(self.db).get_or_create(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
         source = RagSource(
             source_id=f"src_{uuid4().hex}",
             client_id=client_id,
@@ -51,6 +58,55 @@ class RagSourceRepository:
             .filter(RagSource.source_id == source_id)
             .first()
         )
+
+    def find_duplicate_by_hash(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        content_hash: str | None,
+    ) -> RagSource | None:
+        if not content_hash:
+            return None
+
+        return (
+            self.db.query(RagSource)
+            .filter(
+                RagSource.client_id == client_id,
+                RagSource.corpus_id == corpus_id,
+                RagSource.content_hash == content_hash,
+                RagSource.status != "deleted",
+            )
+            .order_by(RagSource.created_at.desc())
+            .first()
+        )
+
+    def find_duplicate_by_source_uri(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        source_uri: str,
+        source_type: str = "url",
+    ) -> RagSource | None:
+        normalized_uri = self.normalize_source_uri(source_uri)
+
+        candidates = (
+            self.db.query(RagSource)
+            .filter(
+                RagSource.client_id == client_id,
+                RagSource.corpus_id == corpus_id,
+                RagSource.source_type == source_type,
+                RagSource.status != "deleted",
+            )
+            .all()
+        )
+
+        for candidate in candidates:
+            if self.normalize_source_uri(candidate.source_uri or "") == normalized_uri:
+                return candidate
+
+        return None
 
     def list_by_client(
         self,
@@ -125,3 +181,30 @@ class RagSourceRepository:
             query = query.filter(RagSource.status != "deleted")
 
         return query.order_by(RagSource.created_at.desc()).all()
+
+    @staticmethod
+    def normalize_source_uri(source_uri: str) -> str:
+        source_uri = (source_uri or "").strip()
+
+        if not source_uri:
+            return ""
+
+        parsed = urlparse(source_uri)
+
+        scheme = (parsed.scheme or "https").lower()
+        netloc = parsed.netloc.lower()
+        path = parsed.path or "/"
+
+        if path != "/":
+            path = path.rstrip("/")
+
+        return urlunparse(
+            (
+                scheme,
+                netloc,
+                path,
+                "",
+                parsed.query,
+                "",
+            )
+        )

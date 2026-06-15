@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from core.config import settings
 from schemas.rag import RagIndexSourceResponse, RagUploadResponse, RagUrlIngestPreviewResponse
 from services.rag.indexing.indexing_service import RagIndexingService
+from services.rag.ingestion.exceptions import DuplicateSourceError
 from services.rag.ingestion.chunker import RagChunker
 from services.rag.ingestion.parsers.resolver import ParserResolver
 from services.rag.ingestion.parsers.url_parser import UrlParser
@@ -44,6 +45,19 @@ class RagIngestService:
             shutil.copyfileobj(upload_file.file, buffer)
 
         content_hash = self._hash_file(file_path)
+
+        duplicate = self.source_repository.find_duplicate_by_hash(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            content_hash=content_hash,
+        )
+
+        if duplicate is not None:
+            file_path.unlink(missing_ok=True)
+            raise DuplicateSourceError(
+                message="Ce fichier a déjà été importé dans ce corpus.",
+                existing_source=duplicate,
+            )
 
         source = self.source_repository.create_source(
             client_id=client_id,
@@ -115,8 +129,23 @@ class RagIngestService:
         storage_dir = self._build_storage_dir(client_id=client_id)
         storage_dir.mkdir(parents=True, exist_ok=True)
 
+        normalized_url = self.source_repository.normalize_source_uri(str(url))
+
+        duplicate = self.source_repository.find_duplicate_by_source_uri(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_uri=normalized_url,
+            source_type="url",
+        )
+
+        if duplicate is not None:
+            raise DuplicateSourceError(
+                message="Cette URL a déjà été importée dans ce corpus.",
+                existing_source=duplicate,
+            )
+
         parser = UrlParser()
-        parsed_document = parser.parse_url(url)
+        parsed_document = parser.parse_url(normalized_url)
 
         final_source_name = source_name or parsed_document.metadata.get("title") or url
         safe_source_name = self._safe_filename(final_source_name)[:120] or "url_source"
@@ -128,7 +157,7 @@ class RagIngestService:
             corpus_id=corpus_id,
             source_type="url",
             source_name=final_source_name,
-            source_uri=url,
+            source_uri=normalized_url,
             metadata_json={
                 **(metadata or {}),
                 **parsed_document.metadata,
@@ -172,7 +201,7 @@ class RagIngestService:
             source_type=source.source_type,
             source_name=source.source_name,
             status="pending",
-            source_uri=url,
+            source_uri=normalized_url,
             chunks_path=str(chunks_path),
             chunks_count=len(chunks),
             preview_chunks=self._preview_chunks(chunks),
@@ -200,6 +229,19 @@ class RagIngestService:
 
         content_hash = self._hash_file(file_path)
 
+        duplicate = self.source_repository.find_duplicate_by_hash(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            content_hash=content_hash,
+        )
+
+        if duplicate is not None:
+            file_path.unlink(missing_ok=True)
+            raise DuplicateSourceError(
+                message="Ce fichier a déjà été importé dans ce corpus.",
+                existing_source=duplicate,
+            )
+
         return self.source_repository.create_source(
             client_id=client_id,
             corpus_id=corpus_id,
@@ -224,18 +266,32 @@ class RagIngestService:
         source_name: str | None = None,
         metadata: dict | None = None,
     ):
-        final_source_name = source_name or url
+        normalized_url = self.source_repository.normalize_source_uri(str(url))
+        final_source_name = source_name or normalized_url
+
+        duplicate = self.source_repository.find_duplicate_by_source_uri(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_uri=normalized_url,
+            source_type="url",
+        )
+
+        if duplicate is not None:
+            raise DuplicateSourceError(
+                message="Cette URL a déjà été importée dans ce corpus.",
+                existing_source=duplicate,
+            )
 
         return self.source_repository.create_source(
             client_id=client_id,
             corpus_id=corpus_id,
             source_type="url",
             source_name=final_source_name,
-            source_uri=url,
+            source_uri=normalized_url,
             metadata_json={
                 **(metadata or {}),
                 "ingestion_mode": "async",
-                "url": url,
+                "url": normalized_url,
                 "source_name_provided": bool(source_name),
             },
             content_hash=None,
