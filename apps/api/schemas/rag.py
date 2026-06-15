@@ -2,9 +2,6 @@
 Schémas Pydantic du module RAG documentaire.
 
 Ce fichier regroupe les contrats d'API utilisés par les routes /rag/*.
-Le MVP jour 1 expose uniquement /rag/health, mais les modèles principaux
-sont déjà posés pour préparer l'ingestion, le chat, la suppression de sources
-et le Full Resync.
 """
 
 from __future__ import annotations
@@ -74,75 +71,9 @@ class RagUrlIngestRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class RagChatRequest(BaseModel):
-    client_id: str
-    corpus_id: str = "default"
-    question: str
-    top_k: int = Field(default=5, ge=1, le=10)
-    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    temperature: float = Field(default=0.2, ge=0.0, le=1.5)
-    max_tokens: int = Field(default=700, ge=64, le=2000)
-
-class RagChatSource(BaseModel):
-    source_id: str | None = None
-    source_type: str | None = None
-    source_name: str | None = None
-    page: int | None = None
-    chunk_index: int | None = None
-    score: float | None = None
-    text: str | None = None
-
-
-class RagSourceCitation(BaseModel):
-    """Source documentaire utilisée pour construire une réponse."""
-
-    source_id: str
-    source_name: str
-    source_type: RagSourceType | None = None
-    page: int | None = None
-    chunk_index: int | None = None
-    score: float | None = None
-    excerpt: str
-
-
-class RagChatResponse(BaseModel):
-    """Réponse générée par le chatbot RAG."""
-
-    client_id: str
-    corpus_id: str
-    question: str
-    answer: str
-    sources: list[RagChatSource] = Field(default_factory=list)
-    used_chunks_count: int
-
-
-class RagResyncSourceInput(BaseModel):
-    """Source transmise dans une demande de Full Resync."""
-
-    source_type: RagSourceType
-    source_name: str
-    source_uri: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class RagResyncRequest(BaseModel):
-    """Demande de reconstruction complète d'un corpus documentaire."""
-
-    client_id: str = Field(..., min_length=1)
-    corpus_id: str = Field(default="default", min_length=1)
-    sources: list[RagResyncSourceInput]
-
-
-class RagResyncResponse(BaseModel):
-    """Bilan d'un Full Resync."""
-
-    client_id: str
-    corpus_id: str
-    status: Literal["accepted", "completed", "partial_error", "error"]
-    sources_count: int
-    message: str | None = None
-
 class RagUploadResponse(BaseModel):
+    """Réponse d'ingestion synchrone d'un fichier."""
+
     source_id: str
     client_id: str
     corpus_id: str
@@ -152,11 +83,13 @@ class RagUploadResponse(BaseModel):
     file_path: str
     chunks_path: str
     chunks_count: int
-    preview_chunks: list[dict] = Field(default_factory=list)
+    preview_chunks: list[dict[str, Any]] = Field(default_factory=list)
     parser_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RagUrlIngestPreviewResponse(BaseModel):
+    """Réponse d'ingestion synchrone d'une URL."""
+
     source_id: str
     client_id: str
     corpus_id: str
@@ -166,11 +99,13 @@ class RagUrlIngestPreviewResponse(BaseModel):
     source_uri: str
     chunks_path: str
     chunks_count: int
-    preview_chunks: list[dict] = Field(default_factory=list)
+    preview_chunks: list[dict[str, Any]] = Field(default_factory=list)
     parser_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RagIndexSourceResponse(BaseModel):
+    """Réponse d'indexation d'une source."""
+
     source_id: str
     client_id: str
     corpus_id: str
@@ -180,6 +115,8 @@ class RagIndexSourceResponse(BaseModel):
 
 
 class RagSearchRequest(BaseModel):
+    """Requête de recherche vectorielle RAG."""
+
     client_id: str
     corpus_id: str = "default"
     query: str
@@ -188,6 +125,8 @@ class RagSearchRequest(BaseModel):
 
 
 class RagSearchResult(BaseModel):
+    """Résultat de recherche vectorielle RAG."""
+
     score: float
     source_id: str | None = None
     source_type: str | None = None
@@ -199,6 +138,8 @@ class RagSearchResult(BaseModel):
 
 
 class RagSearchResponse(BaseModel):
+    """Réponse de recherche vectorielle RAG."""
+
     client_id: str
     corpus_id: str
     query: str
@@ -207,6 +148,8 @@ class RagSearchResponse(BaseModel):
 
 
 class RagChatSource(BaseModel):
+    """Source utilisée par une réponse RAG."""
+
     source_id: str | None = None
     source_type: str | None = None
     source_name: str | None = None
@@ -216,7 +159,21 @@ class RagChatSource(BaseModel):
     text: str | None = None
 
 
+class RagSourceCitation(BaseModel):
+    """Ancien format de citation conservé pour compatibilité."""
+
+    source_id: str
+    source_name: str
+    source_type: RagSourceType | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    score: float | None = None
+    excerpt: str
+
+
 class RagChatRequest(BaseModel):
+    """Requête de chat RAG."""
+
     client_id: str
     corpus_id: str = "default"
     conversation_id: str | None = None
@@ -228,6 +185,8 @@ class RagChatRequest(BaseModel):
 
 
 class RagChatResponse(BaseModel):
+    """Réponse générée par le chatbot RAG."""
+
     conversation_id: str | None = None
     client_id: str
     corpus_id: str
@@ -241,47 +200,9 @@ class RagChatResponse(BaseModel):
     filtered_chunks_count: int = 0
 
 
-
-class RagConversationCreateRequest(BaseModel):
-    client_id: str = Field(..., min_length=1)
-    corpus_id: str = Field(default="default", min_length=1)
-    title: str | None = None
-
-
-class RagConversationResponse(BaseModel):
-    conversation_id: str
-    client_id: str
-    corpus_id: str
-    title: str | None = None
-    messages_count: int = 0
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class RagConversationListResponse(BaseModel):
-    client_id: str
-    corpus_id: str | None = None
-    conversations_count: int
-    conversations: list[RagConversationResponse]
-
-
-class RagMessageResponse(BaseModel):
-    id: int
-    conversation_id: str
-    role: str
-    content: str
-    sources: list[dict[str, Any]] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime | None = None
-
-
-class RagMessageListResponse(BaseModel):
-    conversation_id: str
-    messages_count: int
-    messages: list[RagMessageResponse]
-
-
 class RagDeleteSourceResponse(BaseModel):
+    """Réponse de suppression d'une source RAG."""
+
     source_id: str
     client_id: str
     corpus_id: str
@@ -290,24 +211,9 @@ class RagDeleteSourceResponse(BaseModel):
     message: str
 
 
-
-class RagConversationUpdateRequest(BaseModel):
-    client_id: str = Field(..., min_length=1)
-    corpus_id: str = Field(default="default", min_length=1)
-    title: str = Field(..., min_length=1, max_length=200)
-
-
-class RagConversationDeleteResponse(BaseModel):
-    conversation_id: str
-    client_id: str
-    corpus_id: str
-    deleted: bool
-    message: str
-
-
-
-
 class RagReindexSourceResponse(BaseModel):
+    """Réponse de réindexation d'une source RAG."""
+
     source_id: str
     client_id: str
     corpus_id: str
@@ -318,6 +224,8 @@ class RagReindexSourceResponse(BaseModel):
 
 
 class RagCorpusResyncRequest(BaseModel):
+    """Demande de resynchronisation d'un corpus existant."""
+
     client_id: str
     corpus_id: str = "default"
     include_pending: bool = True
@@ -325,6 +233,8 @@ class RagCorpusResyncRequest(BaseModel):
 
 
 class RagCorpusResyncSourceResult(BaseModel):
+    """Résultat de resync pour une source."""
+
     source_id: str
     source_name: str | None = None
     previous_status: str | None = None
@@ -335,6 +245,8 @@ class RagCorpusResyncSourceResult(BaseModel):
 
 
 class RagCorpusResyncResponse(BaseModel):
+    """Bilan de resynchronisation d'un corpus."""
+
     client_id: str
     corpus_id: str
     total_sources: int
@@ -343,8 +255,36 @@ class RagCorpusResyncResponse(BaseModel):
     results: list[RagCorpusResyncSourceResult]
 
 
+class RagResyncSourceInput(BaseModel):
+    """Ancien format de source pour Full Resync conservé pour compatibilité."""
+
+    source_type: RagSourceType
+    source_name: str
+    source_uri: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RagResyncRequest(BaseModel):
+    """Ancien format de demande de Full Resync conservé pour compatibilité."""
+
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(default="default", min_length=1)
+    sources: list[RagResyncSourceInput]
+
+
+class RagResyncResponse(BaseModel):
+    """Ancien format de réponse de Full Resync conservé pour compatibilité."""
+
+    client_id: str
+    corpus_id: str
+    status: Literal["accepted", "completed", "partial_error", "error"]
+    sources_count: int
+    message: str | None = None
+
 
 class RagAsyncJobResponse(BaseModel):
+    """Réponse de création d'un job RAG asynchrone."""
+
     job_id: str
     rq_job_id: str | None = None
     client_id: str
@@ -356,6 +296,8 @@ class RagAsyncJobResponse(BaseModel):
 
 
 class RagJobStatusResponse(BaseModel):
+    """Réponse de consultation du statut d'un job RAG."""
+
     job_id: str
     rq_job_id: str | None = None
     client_id: str
@@ -371,3 +313,70 @@ class RagJobStatusResponse(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class RagConversationCreateRequest(BaseModel):
+    """Demande de création d'une conversation RAG."""
+
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(default="default", min_length=1)
+    title: str | None = None
+
+
+class RagConversationUpdateRequest(BaseModel):
+    """Demande de renommage d'une conversation RAG."""
+
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(default="default", min_length=1)
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class RagConversationResponse(BaseModel):
+    """Vue API d'une conversation RAG."""
+
+    conversation_id: str
+    client_id: str
+    corpus_id: str
+    title: str | None = None
+    messages_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RagConversationListResponse(BaseModel):
+    """Liste des conversations RAG d'un client/corpus."""
+
+    client_id: str
+    corpus_id: str | None = None
+    conversations_count: int
+    conversations: list[RagConversationResponse]
+
+
+class RagMessageResponse(BaseModel):
+    """Vue API d'un message RAG."""
+
+    id: int
+    conversation_id: str
+    role: str
+    content: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class RagMessageListResponse(BaseModel):
+    """Liste des messages d'une conversation RAG."""
+
+    conversation_id: str
+    messages_count: int
+    messages: list[RagMessageResponse]
+
+
+class RagConversationDeleteResponse(BaseModel):
+    """Réponse de suppression d'une conversation RAG."""
+
+    conversation_id: str
+    client_id: str
+    corpus_id: str
+    deleted: bool
+    message: str

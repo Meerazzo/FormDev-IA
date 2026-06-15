@@ -35,7 +35,7 @@ class RagPromptBuilder:
             "8. N'invente jamais de numéro de page.\n"
             "9. Si aucune page n'est indiquée dans une source, ne mentionne pas de page pour cette source.\n"
             "10. L'historique de conversation sert uniquement à comprendre la demande de l'utilisateur.\n"
-            "11. Les faits de la réponse doivent toujours provenir des extraits documentaires fournis.\n"
+            "11. Les faits de la réponse doivent toujours provenir des extraits documentaires fournis.\n12. Ne cite jamais deux fois la même source avec le même chunk dans la section Sources utilisées.\n"
             "\n"
             "Format attendu :\n"
             "Réponse :\n"
