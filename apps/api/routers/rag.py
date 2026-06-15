@@ -44,6 +44,7 @@ from services.rag.jobs.job_repository import RagJobRepository
 from services.rag.conversations.conversation_repository import RagConversationRepository
 from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.queue.rag_queue import (
+    enqueue_rag_ingest_job,
     enqueue_rag_index_job,
     enqueue_rag_reindex_job,
     enqueue_rag_resync_job,
@@ -82,6 +83,71 @@ async def rag_health(
         embedding_model=settings.RAG_EMBEDDING_MODEL,
         vector_size=settings.RAG_VECTOR_SIZE,
         message=qdrant_status["error"],
+    )
+
+
+
+@router.post(
+    "/sources/upload-async",
+    response_model=RagAsyncJobResponse,
+    summary="Uploader un fichier RAG et lancer son ingestion complète en tâche asynchrone",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def upload_source_async(
+    request: Request,
+    client_id: str,
+    corpus_id: str = "default",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagAsyncJobResponse:
+    authenticate(api_key)
+
+    ingest_service = RagIngestService(db)
+
+    try:
+        source = await ingest_service.create_upload_source_for_async(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            upload_file=file,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.create_job(
+        client_id=source.client_id,
+        corpus_id=source.corpus_id,
+        source_id=source.source_id,
+        job_type="ingest",
+        total_sources=1,
+        metadata={
+            "source_name": source.source_name,
+            "source_type": source.source_type,
+            "source_uri": source.source_uri,
+            "ingestion_mode": "upload_async",
+        },
+    )
+
+    rq_job_id = enqueue_rag_ingest_job(
+        source_id=source.source_id,
+        job_id=job.job_id,
+    )
+
+    job_repository.attach_rq_job_id(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+    )
+
+    return RagAsyncJobResponse(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+        client_id=job.client_id,
+        corpus_id=job.corpus_id,
+        source_id=source.source_id,
+        job_type=job.job_type,
+        status=job.status,
+        message="Job d'ingestion RAG ajouté à la queue",
     )
 
 
@@ -134,6 +200,68 @@ async def create_url_source(
         url=str(payload.url),
         source_name=payload.source_name,
         metadata=payload.metadata,
+    )
+
+
+
+@router.post(
+    "/sources/url/ingest-async",
+    response_model=RagAsyncJobResponse,
+    summary="Déclarer une URL RAG et lancer son ingestion complète en tâche asynchrone",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def ingest_url_source_async(
+    request: Request,
+    payload: RagUrlIngestRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagAsyncJobResponse:
+    authenticate(api_key)
+
+    ingest_service = RagIngestService(db)
+
+    source = ingest_service.create_url_source_for_async(
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        url=str(payload.url),
+        source_name=payload.source_name,
+        metadata=payload.metadata,
+    )
+
+    job_repository = RagJobRepository(db)
+    job = job_repository.create_job(
+        client_id=source.client_id,
+        corpus_id=source.corpus_id,
+        source_id=source.source_id,
+        job_type="ingest",
+        total_sources=1,
+        metadata={
+            "source_name": source.source_name,
+            "source_type": source.source_type,
+            "source_uri": source.source_uri,
+            "ingestion_mode": "url_async",
+        },
+    )
+
+    rq_job_id = enqueue_rag_ingest_job(
+        source_id=source.source_id,
+        job_id=job.job_id,
+    )
+
+    job_repository.attach_rq_job_id(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+    )
+
+    return RagAsyncJobResponse(
+        job_id=job.job_id,
+        rq_job_id=rq_job_id,
+        client_id=job.client_id,
+        corpus_id=job.corpus_id,
+        source_id=source.source_id,
+        job_type=job.job_type,
+        status=job.status,
+        message="Job d'ingestion URL RAG ajouté à la queue",
     )
 
 

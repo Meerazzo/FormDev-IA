@@ -2,9 +2,71 @@ import logging
 
 from db.session import get_db
 from services.rag.indexing.indexing_service import RagIndexingService
+from services.rag.ingestion.ingest_service import RagIngestService
 from services.rag.jobs.job_repository import RagJobRepository
 
 logger = logging.getLogger(__name__)
+
+
+
+def process_rag_ingest_job(source_id: str, job_id: str) -> None:
+    """
+    Tâche RQ d'ingestion complète RAG.
+
+    Elle réalise :
+    - parsing fichier/URL
+    - chunking
+    - écriture du .chunks.json
+    - embeddings
+    - indexation Qdrant
+    """
+    logger.info("Starting RAG ingest job_id=%s source_id=%s", job_id, source_id)
+
+    db_gen = get_db()
+    db = next(db_gen)
+
+    try:
+        job_repository = RagJobRepository(db)
+        job_repository.mark_running(job_id)
+
+        service = RagIngestService(db)
+        response = service.ingest_source_and_index(source_id)
+
+        job_repository.mark_succeeded(
+            job_id,
+            processed_sources=1,
+            failed_sources=0,
+            metadata={
+                "chunks_indexed": response.chunks_indexed,
+                "qdrant_collection": response.qdrant_collection,
+                "final_source_status": response.status,
+            },
+        )
+
+        logger.info(
+            "RAG ingest job completed job_id=%s source_id=%s chunks=%s",
+            job_id,
+            source_id,
+            response.chunks_indexed,
+        )
+
+    except Exception as exc:
+        logger.exception("RAG ingest job failed job_id=%s source_id=%s", job_id, source_id)
+
+        try:
+            RagJobRepository(db).mark_failed(
+                job_id,
+                error_message=str(exc),
+                processed_sources=0,
+                failed_sources=1,
+            )
+        except Exception:
+            logger.exception("Unable to mark RAG ingest job as failed job_id=%s", job_id)
+
+        raise
+
+    finally:
+        db.close()
 
 
 def process_rag_index_job(source_id: str, job_id: str) -> None:
