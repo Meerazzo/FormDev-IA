@@ -8,6 +8,11 @@ from services.rag.embeddings.local_embedding_service import get_local_embedding_
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 
 
+
+STRICT_RAG_FALLBACK_ANSWER = (
+    "Je ne dispose pas d'information suffisante dans les documents fournis "
+    "pour répondre à cette question."
+)
 class RagService:
     """
     Service principal de réponse RAG.
@@ -21,6 +26,63 @@ class RagService:
     6. Appelle vLLM.
     7. Retourne réponse + sources + informations de retrieval.
     """
+
+
+    def _has_enough_relevance(self, sources: list) -> bool:
+        """Détermine si les sources retrouvées sont assez pertinentes pour répondre."""
+        if not sources:
+            return False
+
+        scores = []
+
+        for source in sources:
+            score = None
+
+            if isinstance(source, dict):
+                score = source.get("score")
+            else:
+                score = getattr(source, "score", None)
+
+            if score is not None:
+                try:
+                    scores.append(float(score))
+                except (TypeError, ValueError):
+                    continue
+
+        if not scores:
+            return False
+
+        best_score = max(scores)
+
+        return best_score >= settings.RAG_MIN_RELEVANT_SCORE
+
+    def _build_strict_fallback_response(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        question: str,
+        retrieval: dict,
+    ) -> RagChatResponse:
+        """Construit une réponse fallback quand le contexte documentaire est insuffisant."""
+        return RagChatResponse(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            question=question,
+            answer=STRICT_RAG_FALLBACK_ANSWER,
+            sources=[],
+            used_chunks_count=0,
+            retrieval_confidence="low",
+            top_score=retrieval.get("top_score"),
+            retrieval_candidates_count=retrieval.get("initial_candidates_count", 0),
+            filtered_chunks_count=retrieval.get("filtered_candidates_count", 0),
+            metadata={
+                "fallback": True,
+                "fallback_reason": "insufficient_retrieval_score",
+                "min_relevant_score": settings.RAG_MIN_RELEVANT_SCORE,
+            },
+        )
+
 
     def __init__(self) -> None:
         self.embedding_service = get_local_embedding_service()
@@ -83,6 +145,14 @@ class RagService:
                 top_score=retrieval["top_score"],
                 retrieval_candidates_count=retrieval["initial_candidates_count"],
                 filtered_chunks_count=retrieval["filtered_candidates_count"],
+            )
+
+        if not self._has_enough_relevance(chunks):
+            return self._build_strict_fallback_response(
+                client_id=client_id,
+                corpus_id=corpus_id,
+                question=question,
+                retrieval=retrieval,
             )
 
         messages = self.prompt_builder.build_messages(

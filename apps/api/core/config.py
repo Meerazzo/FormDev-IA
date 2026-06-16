@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     RAG_DEFAULT_TOP_K: int = 5
     RAG_SCORE_THRESHOLD: float = 0.25
-    RAG_MIN_RELEVANT_SCORE: float = 0.45
+    RAG_MIN_RELEVANT_SCORE: float = 0.55
     RAG_RETRIEVAL_CANDIDATE_MULTIPLIER: int = 4
     RAG_MAX_CONTEXT_CHARS: int = 6000
     RAG_MAX_SOURCE_TEXT_CHARS: int = 1200

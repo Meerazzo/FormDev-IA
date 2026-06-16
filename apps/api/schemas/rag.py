@@ -223,6 +223,7 @@ class RagChatResponse(BaseModel):
     top_score: float | None = None
     retrieval_candidates_count: int = 0
     filtered_chunks_count: int = 0
+    metadata: dict | None = None
 
 
 class RagDeleteSourceResponse(BaseModel):
