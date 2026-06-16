@@ -35,15 +35,13 @@ class RagPromptBuilder:
             "8. N'invente jamais de numéro de page.\n"
             "9. Si aucune page n'est indiquée dans une source, ne mentionne pas de page pour cette source.\n"
             "10. L'historique de conversation sert uniquement à comprendre la demande de l'utilisateur.\n"
-            "11. Les faits de la réponse doivent toujours provenir des extraits documentaires fournis.\n12. Ne cite jamais deux fois la même source avec le même chunk dans la section Sources utilisées.\n"
+            "11. Les faits de la réponse doivent toujours provenir des extraits documentaires fournis.\n"
+            "12. Ne rédige jamais de section Sources utilisées dans la réponse.\n"
+            "13. Ne liste jamais les sources dans le texte de la réponse.\n"
+            "14. Les sources sont fournies séparément par l'API dans le champ JSON sources.\n"
             "\n"
             "Format attendu :\n"
-            "Réponse :\n"
-            "<réponse courte et précise>\n"
-            "\n"
-            "Sources utilisées :\n"
-            "- <nom du document>, chunk <numéro>\n"
-            "- <nom du document>, page <page>, chunk <numéro> uniquement si une page est explicitement indiquée\n"
+            "<réponse courte, précise et directement exploitable>\n"
         )
 
         user_prompt = (
@@ -125,3 +123,4 @@ class RagPromptBuilder:
             formatted_messages.append(f"{label} : {content}")
 
         return "\n".join(formatted_messages) if formatted_messages else "Aucun historique disponible."
+

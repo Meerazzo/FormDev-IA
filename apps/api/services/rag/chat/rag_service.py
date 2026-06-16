@@ -1,4 +1,5 @@
 import httpx
+import re
 
 from core.config import settings
 from schemas.rag import RagChatResponse, RagChatSource
@@ -162,10 +163,12 @@ class RagService:
             conversation_history=conversation_history or [],
         )
 
-        answer_text = self._call_vllm(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+        answer_text = self._strip_generated_sources_section(
+            self._call_vllm(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         )
 
         return RagChatResponse(
@@ -173,18 +176,7 @@ class RagService:
             corpus_id=corpus_id,
             question=question,
             answer=answer_text,
-            sources=[
-                RagChatSource(
-                    source_id=chunk.get("source_id"),
-                    source_type=chunk.get("source_type"),
-                    source_name=chunk.get("source_name"),
-                    page=chunk.get("page"),
-                    chunk_index=chunk.get("chunk_index"),
-                    score=chunk.get("score"),
-                    text=chunk.get("text"),
-                )
-                for chunk in chunks
-            ],
+            sources=self._build_chat_sources(chunks),
             used_chunks_count=len(chunks),
             retrieval_confidence=retrieval["retrieval_confidence"],
             top_score=retrieval["top_score"],
@@ -217,6 +209,71 @@ class RagService:
             "Question actuelle :\n"
             f"{question}"
         )
+
+
+
+    def _build_chat_sources(self, chunks: list[dict]) -> list[RagChatSource]:
+        """Construit une liste de sources API stable et dédupliquée."""
+        sources: list[RagChatSource] = []
+        seen: set[tuple[str | None, int | None, int | None]] = set()
+
+        for chunk in chunks:
+            key = (
+                chunk.get("source_id"),
+                chunk.get("chunk_index"),
+                chunk.get("page"),
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            sources.append(
+                RagChatSource(
+                    source_id=chunk.get("source_id"),
+                    source_type=chunk.get("source_type"),
+                    source_name=chunk.get("source_name"),
+                    page=chunk.get("page"),
+                    chunk_index=chunk.get("chunk_index"),
+                    score=chunk.get("score"),
+                    text=chunk.get("text"),
+                )
+            )
+
+        return sources
+
+
+    def _strip_generated_sources_section(self, answer: str) -> str:
+        """
+        Supprime une éventuelle section de sources générée par le LLM.
+
+        Les sources doivent être consommées depuis le champ JSON `sources`,
+        pas depuis le texte libre `answer`.
+        """
+        if not answer:
+            return answer
+
+        patterns = [
+            r"\n+\s*Sources utilisées\s*:\s*[\s\S]*$",
+            r"\n+\s*Sources\s*:\s*[\s\S]*$",
+            r"\n+\s*Références\s*:\s*[\s\S]*$",
+        ]
+
+        cleaned = answer.strip()
+
+        for pattern in patterns:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+        cleaned = re.sub(
+            r"^\s*Réponse\s*:\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        return cleaned
+
 
     def _call_vllm(
         self,
