@@ -1,4 +1,6 @@
 import httpx
+import json
+from collections.abc import Iterator
 import re
 
 from core.config import settings
@@ -183,6 +185,196 @@ class RagService:
             retrieval_candidates_count=retrieval["initial_candidates_count"],
             filtered_chunks_count=retrieval["filtered_candidates_count"],
         )
+
+
+    def stream_answer(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        question: str,
+        top_k: int,
+        score_threshold: float | None,
+        temperature: float,
+        max_tokens: int,
+        conversation_history: list[dict] | None = None,
+    ) -> Iterator[dict]:
+        """
+        Génère une réponse RAG en streaming.
+
+        Events retournés :
+        - token
+        - sources
+        - done
+        """
+        retrieval_query = self._build_retrieval_query(
+            question=question,
+            conversation_history=conversation_history or [],
+        )
+
+        query_vector = self.embedding_service.embed_query(retrieval_query)
+
+        candidate_top_k = max(
+            top_k,
+            top_k * settings.RAG_RETRIEVAL_CANDIDATE_MULTIPLIER,
+        )
+
+        raw_chunks = self.vector_store.search(
+            query_vector=query_vector,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            top_k=candidate_top_k,
+            score_threshold=None,
+        )
+
+        retrieval = self.retrieval_postprocessor.process(
+            chunks=raw_chunks,
+            requested_top_k=top_k,
+            score_threshold=score_threshold,
+        )
+
+        chunks = retrieval["chunks"]
+
+        if not chunks or not self._has_enough_relevance(chunks):
+            fallback_answer = STRICT_RAG_FALLBACK_ANSWER
+
+            yield {
+                "event": "token",
+                "data": {
+                    "content": fallback_answer,
+                },
+            }
+
+            yield {
+                "event": "sources",
+                "data": {
+                    "sources": [],
+                },
+            }
+
+            yield {
+                "event": "done",
+                "data": {
+                    "answer": fallback_answer,
+                    "used_chunks_count": 0,
+                    "retrieval_confidence": "low",
+                    "top_score": retrieval.get("top_score"),
+                    "retrieval_candidates_count": retrieval.get("initial_candidates_count", 0),
+                    "filtered_chunks_count": retrieval.get("filtered_candidates_count", 0),
+                    "fallback": True,
+                },
+            }
+
+            return
+
+        messages = self.prompt_builder.build_messages(
+            question=question,
+            context_chunks=chunks,
+            retrieval_confidence=retrieval["retrieval_confidence"],
+            conversation_history=conversation_history or [],
+        )
+
+        answer_parts: list[str] = []
+
+        for token in self._call_vllm_stream(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ):
+            if not token:
+                continue
+
+            answer_parts.append(token)
+
+            yield {
+                "event": "token",
+                "data": {
+                    "content": token,
+                },
+            }
+
+        raw_answer = "".join(answer_parts)
+        cleaned_answer = self._strip_generated_sources_section(raw_answer)
+
+        sources = self._build_chat_sources(chunks)
+        serialized_sources = [self._serialize_chat_source(source) for source in sources]
+
+        yield {
+            "event": "sources",
+            "data": {
+                "sources": serialized_sources,
+            },
+        }
+
+        yield {
+            "event": "done",
+            "data": {
+                "answer": cleaned_answer,
+                "used_chunks_count": len(sources),
+                "retrieval_confidence": retrieval["retrieval_confidence"],
+                "top_score": retrieval["top_score"],
+                "retrieval_candidates_count": retrieval["initial_candidates_count"],
+                "filtered_chunks_count": retrieval["filtered_candidates_count"],
+                "fallback": False,
+            },
+        }
+
+    def _serialize_chat_source(self, source: RagChatSource) -> dict:
+        """Sérialise une source RAG pour JSON/SSE."""
+        if hasattr(source, "model_dump"):
+            return source.model_dump()
+
+        return source.dict()
+
+    def _call_vllm_stream(
+        self,
+        *,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+    ) -> Iterator[str]:
+        """Appelle vLLM en mode streaming OpenAI-compatible."""
+        model_name = self._get_vllm_model_name()
+
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        url = f"{settings.VLLM_BASE_URL.rstrip('/')}/v1/chat/completions"
+
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream("POST", url, json=payload) as response:
+                response.raise_for_status()
+
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+
+                    if line.startswith("data: "):
+                        line = line[len("data: "):]
+
+                    if line.strip() == "[DONE]":
+                        break
+
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    choices = payload.get("choices") or []
+                    if not choices:
+                        continue
+
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content")
+
+                    if content:
+                        yield content
+
 
     def _build_retrieval_query(
         self,
