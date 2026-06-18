@@ -62,6 +62,7 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 
 @router.get(
     "/health",
+    response_description="État du module RAG",
     response_model=RagHealthResponse,
     summary="Vérifier l'état du module RAG",
 )
@@ -70,6 +71,11 @@ async def rag_health(
     request: Request,
     api_key: str | None = Security(api_key_header),
 ) -> RagHealthResponse:
+    """
+    Vérifie l'état du module RAG documentaire.
+    
+    Cette route permet de contrôler la disponibilité de Qdrant, l'existence de la collection vectorielle, l'URL du serveur vLLM et le modèle d'embedding utilisé.
+    """
     authenticate(api_key)
 
     vector_store = RagVectorStore()
@@ -93,8 +99,9 @@ async def rag_health(
 
 @router.post(
     "/sources/upload-async",
+    response_description="Job d'ingestion créé",
     response_model=RagAsyncJobResponse,
-    summary="Uploader un fichier RAG et lancer son ingestion complète en tâche asynchrone",
+    summary="Importer un fichier RAG en asynchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def upload_source_async(
@@ -105,6 +112,13 @@ async def upload_source_async(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagAsyncJobResponse:
+    """
+    Importe un fichier documentaire et crée un job d'ingestion asynchrone.
+    
+    Le fichier est sauvegardé, une source est créée en statut pending, puis un job est envoyé dans la queue RQ. Le worker RAG se charge ensuite du parsing, du chunking, des embeddings et de l'indexation Qdrant.
+    
+    Cette route est recommandée pour l'intégration CRM.
+    """
     authenticate(api_key)
 
     ingest_service = RagIngestService(db)
@@ -159,8 +173,9 @@ async def upload_source_async(
 
 @router.post(
     "/sources/upload",
+    response_description="Fichier ingéré",
     response_model=RagUploadResponse,
-    summary="Uploader un fichier TXT, PDF ou DOCX et préparer les chunks RAG",
+    summary="Importer un fichier RAG en synchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def upload_source(
@@ -171,6 +186,11 @@ async def upload_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagUploadResponse:
+    """
+    Importe un fichier documentaire en mode synchrone.
+    
+    Cette route réalise immédiatement le parsing et le chunking. Elle est utile pour les tests ou les petits fichiers. Pour un usage production, préférer /rag/sources/upload-async.
+    """
     authenticate(api_key)
 
     service = RagIngestService(db)
@@ -189,8 +209,9 @@ async def upload_source(
 
 @router.post(
     "/sources/url",
+    response_description="Source URL créée",
     response_model=RagSourceResponse,
-    summary="Déclarer une URL comme source RAG sans ingestion",
+    summary="Créer une source URL RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def create_url_source(
@@ -199,6 +220,11 @@ async def create_url_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagSourceResponse:
+    """
+    Crée une source de type URL sans lancer immédiatement l'ingestion complète.
+    
+    Cette route permet d'enregistrer une URL comme source documentaire dans un corpus.
+    """
     authenticate(api_key)
 
     service = RagSourceService(db)
@@ -214,8 +240,9 @@ async def create_url_source(
 
 @router.post(
     "/sources/url/ingest-async",
+    response_description="Job d'ingestion URL créé",
     response_model=RagAsyncJobResponse,
-    summary="Déclarer une URL RAG et lancer son ingestion complète en tâche asynchrone",
+    summary="Importer une URL RAG en asynchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def ingest_url_source_async(
@@ -224,6 +251,11 @@ async def ingest_url_source_async(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagAsyncJobResponse:
+    """
+    Importe une URL documentaire en asynchrone.
+    
+    L'API crée une source, crée un job d'ingestion, puis le worker RAG télécharge le contenu, le transforme en texte, le découpe en chunks et l'indexe dans Qdrant.
+    """
     authenticate(api_key)
 
     ingest_service = RagIngestService(db)
@@ -278,8 +310,9 @@ async def ingest_url_source_async(
 
 @router.post(
     "/sources/url/ingest",
+    response_description="URL ingérée",
     response_model=RagUrlIngestPreviewResponse,
-    summary="Ingestion d'une URL et préparation des chunks RAG",
+    summary="Importer une URL RAG en synchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def ingest_url_source(
@@ -288,6 +321,11 @@ async def ingest_url_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagUrlIngestPreviewResponse:
+    """
+    Importe une URL documentaire en mode synchrone.
+    
+    Cette route télécharge et traite immédiatement l'URL. Pour un usage production, préférer /rag/sources/url/ingest-async.
+    """
     authenticate(api_key)
 
     service = RagIngestService(db)
@@ -311,6 +349,7 @@ async def ingest_url_source(
 
 @router.get(
     "/corpora",
+    response_description="Liste des corpus",
     response_model=RagCorpusListResponse,
     summary="Lister les corpus RAG d'un client",
 )
@@ -322,6 +361,11 @@ async def list_rag_corpora(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagCorpusListResponse:
+    """
+    Liste les corpus documentaires associés à un client.
+    
+    Un corpus représente une base documentaire logique. L'isolation documentaire repose sur le couple client_id + corpus_id.
+    """
     authenticate(api_key)
 
     repository = RagCorpusRepository(db)
@@ -339,6 +383,7 @@ async def list_rag_corpora(
 
 @router.get(
     "/corpora/{corpus_id}/sources",
+    response_description="Liste des sources du corpus",
     response_model=list[RagSourceResponse],
     summary="Lister les sources d'un corpus RAG",
 )
@@ -351,6 +396,11 @@ async def list_rag_corpus_sources(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> list[RagSourceResponse]:
+    """
+    Liste les sources documentaires d'un corpus.
+    
+    Les sources peuvent être dans les statuts pending, indexing, indexed, error ou deleted. Cette route permet au CRM d'afficher l'état documentaire d'un corpus.
+    """
     authenticate(api_key)
 
     service = RagSourceService(db)
@@ -364,8 +414,9 @@ async def list_rag_corpus_sources(
 
 @router.get(
     "/sources",
+    response_description="Liste des sources",
     response_model=list[RagSourceResponse],
-    summary="Lister les sources RAG d'un client",
+    summary="Lister les sources RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def list_sources(
@@ -376,6 +427,11 @@ async def list_sources(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> list[RagSourceResponse]:
+    """
+    Liste les sources documentaires d'un client et d'un corpus.
+    
+    Cette route permet d'obtenir les métadonnées des documents importés et leur statut d'indexation.
+    """
     authenticate(api_key)
 
     service = RagSourceService(db)
@@ -387,8 +443,9 @@ async def list_sources(
 
 @router.post(
     "/sources/{source_id}/index",
+    response_description="Source indexée",
     response_model=RagIndexSourceResponse,
-    summary="Indexer une source RAG dans Qdrant",
+    summary="Indexer une source RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def index_source(
@@ -397,6 +454,11 @@ async def index_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagIndexSourceResponse:
+    """
+    Indexe une source documentaire en mode synchrone.
+    
+    La source est transformée en embeddings et ses chunks sont ajoutés à la collection Qdrant. Pour un usage production, préférer la route asynchrone.
+    """
     authenticate(api_key)
 
     service = RagIndexingService(db)
@@ -413,8 +475,9 @@ async def index_source(
 
 @router.post(
     "/search",
+    response_description="Résultats de recherche vectorielle",
     response_model=RagSearchResponse,
-    summary="Recherche vectorielle dans les chunks RAG",
+    summary="Rechercher des passages documentaires",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def search_rag_chunks(
@@ -423,6 +486,11 @@ async def search_rag_chunks(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagSearchResponse:
+    """
+    Recherche des passages documentaires dans Qdrant.
+    
+    La recherche vectorielle est filtrée par client_id et corpus_id. Cette route est utile pour déboguer le retrieval ou afficher des extraits documentaires pertinents.
+    """
     authenticate(api_key)
 
     service = RagIndexingService(db)
@@ -441,6 +509,7 @@ async def search_rag_chunks(
 
 @router.post(
     "/conversations",
+    response_description="Conversation créée",
     response_model=RagConversationResponse,
     summary="Créer une conversation RAG",
 )
@@ -451,6 +520,11 @@ async def create_rag_conversation(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagConversationResponse:
+    """
+    Crée une conversation RAG.
+    
+    Cette route peut être utilisée par le CRM pour créer explicitement une conversation avant d'envoyer des messages. Les routes /rag/chat et /rag/chat/stream peuvent aussi créer automatiquement une conversation.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -465,8 +539,9 @@ async def create_rag_conversation(
 
 @router.get(
     "/conversations",
+    response_description="Liste des conversations",
     response_model=RagConversationListResponse,
-    summary="Lister les conversations RAG d'un client",
+    summary="Lister les conversations RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def list_rag_conversations(
@@ -478,6 +553,11 @@ async def list_rag_conversations(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagConversationListResponse:
+    """
+    Liste les conversations RAG d'un client et d'un corpus.
+    
+    Les conversations sont isolées par client_id et corpus_id.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -501,6 +581,7 @@ async def list_rag_conversations(
 
 @router.get(
     "/conversations/{conversation_id}",
+    response_description="Conversation trouvée",
     response_model=RagConversationResponse,
     summary="Récupérer une conversation RAG",
 )
@@ -513,6 +594,11 @@ async def get_rag_conversation(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagConversationResponse:
+    """
+    Récupère les métadonnées d'une conversation RAG.
+    
+    La conversation doit appartenir au couple client_id + corpus_id fourni dans la requête.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -530,6 +616,7 @@ async def get_rag_conversation(
 
 @router.patch(
     "/conversations/{conversation_id}",
+    response_description="Conversation mise à jour",
     response_model=RagConversationResponse,
     summary="Renommer une conversation RAG",
 )
@@ -541,6 +628,11 @@ async def update_rag_conversation(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagConversationResponse:
+    """
+    Renomme une conversation RAG.
+    
+    Cette route permet de modifier le titre affiché côté CRM.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -559,6 +651,7 @@ async def update_rag_conversation(
 
 @router.delete(
     "/conversations/{conversation_id}",
+    response_description="Conversation supprimée",
     response_model=RagConversationDeleteResponse,
     summary="Supprimer une conversation RAG",
 )
@@ -571,6 +664,11 @@ async def delete_rag_conversation(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagConversationDeleteResponse:
+    """
+    Supprime une conversation RAG et ses messages associés.
+    
+    La suppression est limitée au couple client_id + corpus_id.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -594,6 +692,7 @@ async def delete_rag_conversation(
 
 @router.get(
     "/conversations/{conversation_id}/messages",
+    response_description="Messages de la conversation",
     response_model=RagMessageListResponse,
     summary="Lister les messages d'une conversation RAG",
 )
@@ -608,6 +707,11 @@ async def list_rag_conversation_messages(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagMessageListResponse:
+    """
+    Liste les messages d'une conversation RAG.
+    
+    Chaque message contient son rôle, son contenu, ses sources éventuelles et ses métadonnées éventuelles.
+    """
     authenticate(api_key)
 
     repository = RagConversationRepository(db)
@@ -646,7 +750,8 @@ def _format_sse_event(event: str, data: dict) -> str:
 
 @router.post(
     "/chat/stream",
-    summary="Chat RAG en streaming SSE",
+    response_description="Flux SSE de réponse RAG",
+    summary="Poser une question au chatbot RAG en streaming SSE",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def chat_with_rag_stream(
@@ -655,6 +760,13 @@ async def chat_with_rag_stream(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> StreamingResponse:
+    """
+    Génère une réponse RAG en streaming SSE.
+    
+    Cette route est destinée à une intégration chatbot temps réel dans un CRM. Elle retourne des événements metadata, token, sources, done et error.
+    
+    Comme la route utilise POST, un frontend web doit consommer le stream avec fetch() et non EventSource.
+    """
     authenticate(api_key)
 
     conversation_repository = RagConversationRepository(db)
@@ -794,8 +906,9 @@ async def chat_with_rag_stream(
 
 @router.post(
     "/chat",
+    response_description="Réponse RAG sourcée",
     response_model=RagChatResponse,
-    summary="Générer une réponse RAG avec sources et historique",
+    summary="Poser une question au chatbot RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def rag_chat(
@@ -804,6 +917,13 @@ async def rag_chat(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagChatResponse:
+    """
+    Génère une réponse documentaire complète en JSON.
+    
+    La réponse est construite à partir des documents du corpus ciblé. Le champ answer contient uniquement le texte de réponse. Les sources utilisées sont fournies séparément dans le champ sources.
+    
+    Si les documents ne permettent pas de répondre, le backend retourne un fallback strict avec sources vides.
+    """
     authenticate(api_key)
 
     conversation_repository = RagConversationRepository(db)
@@ -889,6 +1009,7 @@ async def rag_chat(
 
 @router.post(
     "/sources/{source_id}/reindex",
+    response_description="Source réindexée",
     response_model=RagReindexSourceResponse,
     summary="Réindexer une source RAG",
 )
@@ -899,6 +1020,11 @@ async def reindex_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagReindexSourceResponse:
+    """
+    Réindexe une source documentaire en mode synchrone.
+    
+    Cette route reconstruit les chunks et les points vectoriels associés à la source.
+    """
     authenticate(api_key)
 
     service = RagIndexingService(db)
@@ -915,6 +1041,7 @@ async def reindex_source(
 
 @router.post(
     "/corpora/resync",
+    response_description="Corpus resynchronisé",
     response_model=RagCorpusResyncResponse,
     summary="Resynchroniser un corpus RAG",
 )
@@ -925,6 +1052,11 @@ async def resync_corpus(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagCorpusResyncResponse:
+    """
+    Resynchronise un corpus documentaire en mode synchrone.
+    
+    Cette route peut réindexer plusieurs sources d'un corpus. Pour les corpus volumineux, préférer /rag/corpora/resync-async.
+    """
     authenticate(api_key)
 
     service = RagIndexingService(db)
@@ -943,8 +1075,9 @@ async def resync_corpus(
 
 @router.post(
     "/sources/{source_id}/index-async",
+    response_description="Job d'indexation créé",
     response_model=RagAsyncJobResponse,
-    summary="Indexer une source RAG en tâche asynchrone",
+    summary="Indexer une source RAG en asynchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def index_source_async(
@@ -953,6 +1086,11 @@ async def index_source_async(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagAsyncJobResponse:
+    """
+    Crée un job d'indexation asynchrone pour une source documentaire.
+    
+    Le worker RAG se charge ensuite de l'indexation sans bloquer la requête HTTP.
+    """
     authenticate(api_key)
 
     source_repository = RagSourceRepository(db)
@@ -1001,8 +1139,9 @@ async def index_source_async(
 
 @router.post(
     "/sources/{source_id}/reindex-async",
+    response_description="Job de réindexation créé",
     response_model=RagAsyncJobResponse,
-    summary="Réindexer une source RAG en tâche asynchrone",
+    summary="Réindexer une source RAG en asynchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def reindex_source_async(
@@ -1011,6 +1150,11 @@ async def reindex_source_async(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagAsyncJobResponse:
+    """
+    Crée un job de réindexation asynchrone pour une source documentaire.
+    
+    Cette route est recommandée pour réindexer une source en production.
+    """
     authenticate(api_key)
 
     source_repository = RagSourceRepository(db)
@@ -1059,8 +1203,9 @@ async def reindex_source_async(
 
 @router.post(
     "/corpora/resync-async",
+    response_description="Job de resynchronisation créé",
     response_model=RagAsyncJobResponse,
-    summary="Resynchroniser un corpus RAG en tâche asynchrone",
+    summary="Resynchroniser un corpus RAG en asynchrone",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def resync_corpus_async(
@@ -1069,6 +1214,11 @@ async def resync_corpus_async(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagAsyncJobResponse:
+    """
+    Crée un job de resynchronisation asynchrone pour un corpus documentaire.
+    
+    Le worker RAG réindexe les sources éligibles sans bloquer la requête HTTP.
+    """
     authenticate(api_key)
 
     source_repository = RagSourceRepository(db)
@@ -1132,8 +1282,9 @@ async def resync_corpus_async(
 
 @router.get(
     "/jobs/{job_id}",
+    response_description="État du job",
     response_model=RagJobStatusResponse,
-    summary="Consulter le statut d'un job RAG",
+    summary="Consulter l'état d'un job RAG",
 )
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def get_rag_job_status(
@@ -1142,6 +1293,11 @@ async def get_rag_job_status(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagJobStatusResponse:
+    """
+    Retourne l'état d'un job RAG.
+    
+    Les statuts possibles sont pending, running, succeeded et failed. Cette route permet au CRM de suivre une ingestion ou une réindexation asynchrone.
+    """
     authenticate(api_key)
 
     job_repository = RagJobRepository(db)
@@ -1155,6 +1311,7 @@ async def get_rag_job_status(
 
 @router.delete(
     "/sources/{source_id}",
+    response_description="Source supprimée",
     response_model=RagDeleteSourceResponse,
     summary="Supprimer une source RAG",
 )
@@ -1165,6 +1322,11 @@ async def delete_source(
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ) -> RagDeleteSourceResponse:
+    """
+    Supprime logiquement une source documentaire.
+    
+    La source ne sera plus utilisée par le retrieval et les points Qdrant associés sont supprimés lorsque c'est possible.
+    """
     authenticate(api_key)
 
     service = RagSourceLifecycleService(db)

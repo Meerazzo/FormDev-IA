@@ -46,7 +46,22 @@ class RagHealthResponse(BaseModel):
     vector_size: int
     message: str | None = None
 
-
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "ok",
+                "module": "rag",
+                "qdrant_url": "http://qdrant-dev:6333",
+                "qdrant_collection": "rag_chunks",
+                "qdrant_available": True,
+                "qdrant_collection_exists": True,
+                "vllm_base_url": "http://inference:8000",
+                "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+                "vector_size": 384,
+                "message": None,
+            }
+        }
+    }
 
 class RagCorpusResponse(BaseModel):
     """Vue API d'un corpus RAG."""
@@ -71,6 +86,29 @@ class RagCorpusListResponse(BaseModel):
     corpora_count: int
     corpora: list[RagCorpusResponse]
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpora_count": 2,
+                "corpora": [
+                    {
+                        "client_id": "client_demo",
+                        "corpus_id": "default",
+                        "name": "default",
+                        "description": None,
+                        "is_active": True,
+                        "sources_count": 13,
+                        "indexed_sources_count": 3,
+                        "pending_sources_count": 10,
+                        "error_sources_count": 0,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                ],
+            }
+        }
+    }
 
 class RagSourceResponse(BaseModel):
     """Vue API d'une source documentaire."""
@@ -85,6 +123,21 @@ class RagSourceResponse(BaseModel):
     qdrant_points_count: int = 0
     error_message: str | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "source_type": "txt",
+                "source_name": "rag_async_upload_test.txt",
+                "status": "indexed",
+                "source_uri": "/data/rag/client_demo/rag_async_upload_test.txt",
+                "qdrant_points_count": 1,
+                "error_message": None,
+            }
+        }
+    }
 
 class RagUrlIngestRequest(BaseModel):
     """Demande d'ingestion d'une URL."""
@@ -95,6 +148,20 @@ class RagUrlIngestRequest(BaseModel):
     source_name: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "url": "https://example.com",
+                "source_name": "Page de documentation exemple",
+                "metadata": {
+                    "origin": "crm",
+                    "category": "documentation"
+                },
+            }
+        }
+    }
 
 class RagUploadResponse(BaseModel):
     """Réponse d'ingestion synchrone d'un fichier."""
@@ -111,6 +178,23 @@ class RagUploadResponse(BaseModel):
     preview_chunks: list[dict[str, Any]] = Field(default_factory=list)
     parser_metadata: dict[str, Any] = Field(default_factory=dict)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "source_type": "txt",
+                "source_name": "document.txt",
+                "status": "pending",
+                "file_path": "/data/rag/client_demo/document.txt",
+                "chunks_path": "/data/rag/client_demo/document.chunks.json",
+                "chunks_count": 4,
+                "preview_chunks": [],
+                "parser_metadata": {},
+            }
+        }
+    }
 
 class RagUrlIngestPreviewResponse(BaseModel):
     """Réponse d'ingestion synchrone d'une URL."""
@@ -138,6 +222,18 @@ class RagIndexSourceResponse(BaseModel):
     qdrant_collection: str
     chunks_indexed: int
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "status": "indexed",
+                "qdrant_collection": "rag_chunks",
+                "chunks_indexed": 4,
+            }
+        }
+    }
 
 class RagSearchRequest(BaseModel):
     """Requête de recherche vectorielle RAG."""
@@ -148,6 +244,17 @@ class RagSearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "query": "Que doit faire le module RAG documentaire ?",
+                "top_k": 5,
+                "score_threshold": 0.3,
+            }
+        }
+    }
 
 class RagSearchResult(BaseModel):
     """Résultat de recherche vectorielle RAG."""
@@ -171,6 +278,28 @@ class RagSearchResponse(BaseModel):
     results_count: int
     results: list[RagSearchResult]
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "query": "Que doit faire le module RAG documentaire ?",
+                "results_count": 1,
+                "results": [
+                    {
+                        "score": 0.564832,
+                        "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                        "source_type": "txt",
+                        "source_name": "rag_async_upload_test.txt",
+                        "page": None,
+                        "chunk_index": 0,
+                        "text": "Le module RAG documentaire doit générer ses réponses uniquement à partir des documents fournis.",
+                        "metadata": {},
+                    }
+                ],
+            }
+        }
+    }
 
 class RagChatSource(BaseModel):
     """Source utilisée par une réponse RAG."""
@@ -208,6 +337,20 @@ class RagChatRequest(BaseModel):
     temperature: float = Field(default=0.2, ge=0.0, le=1.5)
     max_tokens: int = Field(default=700, ge=64, le=2000)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "conversation_id": None,
+                "question": "Que doit faire le module RAG documentaire pour les réponses ?",
+                "top_k": 5,
+                "score_threshold": None,
+                "temperature": 0.2,
+                "max_tokens": 512,
+            }
+        }
+    }
 
 class RagChatResponse(BaseModel):
     """Réponse générée par le chatbot RAG."""
@@ -225,6 +368,34 @@ class RagChatResponse(BaseModel):
     filtered_chunks_count: int = 0
     metadata: dict | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "conversation_id": "rag_conv_956f9d5b6e1944359cb3120029bd1274",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "question": "Que doit faire le module RAG documentaire pour les réponses ?",
+                "answer": "Le module RAG documentaire doit générer ses réponses uniquement à partir des documents fournis.",
+                "sources": [
+                    {
+                        "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                        "source_type": "txt",
+                        "source_name": "rag_async_upload_test.txt",
+                        "page": None,
+                        "chunk_index": 0,
+                        "score": 0.564832,
+                        "text": "Document de test pour l'ingestion asynchrone RAG.",
+                    }
+                ],
+                "used_chunks_count": 1,
+                "retrieval_confidence": "high",
+                "top_score": 0.564832,
+                "retrieval_candidates_count": 14,
+                "filtered_chunks_count": 1,
+                "metadata": None,
+            }
+        }
+    }
 
 class RagDeleteSourceResponse(BaseModel):
     """Réponse de suppression d'une source RAG."""
@@ -236,6 +407,18 @@ class RagDeleteSourceResponse(BaseModel):
     qdrant_points_deleted: bool
     message: str
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "status": "deleted",
+                "qdrant_points_deleted": True,
+                "message": "Source supprimée avec succès.",
+            }
+        }
+    }
 
 class RagReindexSourceResponse(BaseModel):
     """Réponse de réindexation d'une source RAG."""
@@ -248,6 +431,19 @@ class RagReindexSourceResponse(BaseModel):
     chunks_indexed: int
     message: str
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "source_id": "src_d75a37878f894e4a904a20eff2381dda",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "status": "indexed",
+                "qdrant_collection": "rag_chunks",
+                "chunks_indexed": 4,
+                "message": "Source réindexée avec succès.",
+            }
+        }
+    }
 
 class RagCorpusResyncRequest(BaseModel):
     """Demande de resynchronisation d'un corpus existant."""
@@ -257,6 +453,16 @@ class RagCorpusResyncRequest(BaseModel):
     include_pending: bool = True
     include_error: bool = True
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "include_pending": True,
+                "include_error": True,
+            }
+        }
+    }
 
 class RagCorpusResyncSourceResult(BaseModel):
     """Résultat de resync pour une source."""
@@ -320,6 +526,20 @@ class RagAsyncJobResponse(BaseModel):
     status: str
     message: str
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "job_id": "rag_job_38d8d136780b4d4986af6fcc67861618",
+                "rq_job_id": "295e6769-5942-4bd5-9118-296fc0fd5dce",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "source_id": "src_ea272b723f6b4375a7fc72d6eb611cca",
+                "job_type": "ingest",
+                "status": "pending",
+                "message": "Job d'ingestion RAG ajouté à la queue",
+            }
+        }
+    }
 
 class RagJobStatusResponse(BaseModel):
     """Réponse de consultation du statut d'un job RAG."""
@@ -340,6 +560,27 @@ class RagJobStatusResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "job_id": "rag_job_38d8d136780b4d4986af6fcc67861618",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "source_id": "src_ea272b723f6b4375a7fc72d6eb611cca",
+                "job_type": "ingest",
+                "status": "succeeded",
+                "total_sources": 1,
+                "processed_sources": 1,
+                "failed_sources": 0,
+                "error_message": None,
+                "metadata": {
+                    "chunks_indexed": 1,
+                    "qdrant_collection": "rag_chunks",
+                    "final_source_status": "indexed"
+                },
+            }
+        }
+    }
 
 class RagConversationCreateRequest(BaseModel):
     """Demande de création d'une conversation RAG."""
@@ -348,6 +589,15 @@ class RagConversationCreateRequest(BaseModel):
     corpus_id: str = Field(default="default", min_length=1)
     title: str | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "title": "Discussion sur la documentation RAG",
+            }
+        }
+    }
 
 class RagConversationUpdateRequest(BaseModel):
     """Demande de renommage d'une conversation RAG."""
@@ -356,6 +606,15 @@ class RagConversationUpdateRequest(BaseModel):
     corpus_id: str = Field(default="default", min_length=1)
     title: str = Field(..., min_length=1, max_length=200)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "title": "Nouveau titre de conversation",
+            }
+        }
+    }
 
 class RagConversationResponse(BaseModel):
     """Vue API d'une conversation RAG."""
@@ -368,6 +627,19 @@ class RagConversationResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "conversation_id": "rag_conv_956f9d5b6e1944359cb3120029bd1274",
+                "client_id": "client_demo",
+                "corpus_id": "default",
+                "title": "Discussion sur la documentation RAG",
+                "messages_count": 2,
+                "created_at": "2026-06-16T16:09:56.741000Z",
+                "updated_at": "2026-06-16T16:10:02.741000Z",
+            }
+        }
+    }
 
 class RagConversationListResponse(BaseModel):
     """Liste des conversations RAG d'un client/corpus."""
@@ -397,6 +669,32 @@ class RagMessageListResponse(BaseModel):
     messages_count: int
     messages: list[RagMessageResponse]
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "conversation_id": "rag_conv_956f9d5b6e1944359cb3120029bd1274",
+                "messages_count": 2,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Que doit faire le module RAG documentaire ?",
+                        "sources": None,
+                        "metadata": None,
+                        "created_at": "2026-06-16T16:09:56.741000Z",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Le module RAG documentaire doit répondre à partir des documents fournis.",
+                        "sources": [],
+                        "metadata": {
+                            "retrieval_confidence": "high"
+                        },
+                        "created_at": "2026-06-16T16:10:02.741000Z",
+                    },
+                ],
+            }
+        }
+    }
 
 class RagConversationDeleteResponse(BaseModel):
     """Réponse de suppression d'une conversation RAG."""
