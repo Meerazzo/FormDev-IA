@@ -9,7 +9,7 @@ from services.rag.chat.prompt_builder import RagPromptBuilder
 from services.rag.chat.retrieval_postprocessor import RagRetrievalPostProcessor
 from services.rag.embeddings.local_embedding_service import get_local_embedding_service
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
-
+from services.rag.chat.query_rewriter import RagQueryRewriter
 
 
 STRICT_RAG_FALLBACK_ANSWER = (
@@ -59,6 +59,26 @@ class RagService:
 
         return best_score >= settings.RAG_MIN_RELEVANT_SCORE
 
+    def _build_retrieval_metadata(
+        self,
+        *,
+        base_retrieval_query: str,
+        retrieval_query: str,
+    ) -> dict:
+        """Construit les métadonnées de diagnostic liées au query rewriting."""
+        metadata = {
+            "base_retrieval_query": base_retrieval_query,
+        }
+
+        if retrieval_query != base_retrieval_query:
+            metadata["rewritten_query"] = retrieval_query
+            metadata["query_rewritten"] = True
+        else:
+            metadata["query_rewritten"] = False
+
+        return metadata
+
+
     def _build_strict_fallback_response(
         self,
         *,
@@ -92,6 +112,7 @@ class RagService:
         self.vector_store = RagVectorStore()
         self.prompt_builder = RagPromptBuilder()
         self.retrieval_postprocessor = RagRetrievalPostProcessor()
+        self.query_rewriter = RagQueryRewriter()
 
     def answer(
         self,
@@ -105,8 +126,12 @@ class RagService:
         max_tokens: int,
         conversation_history: list[dict] | None = None,
     ) -> RagChatResponse:
-        retrieval_query = self._build_retrieval_query(
+        base_retrieval_query = self._build_retrieval_query(
             question=question,
+            conversation_history=conversation_history or [],
+        )
+        retrieval_query = self.query_rewriter.rewrite(
+            question=base_retrieval_query,
             conversation_history=conversation_history or [],
         )
 
@@ -207,8 +232,12 @@ class RagService:
         - sources
         - done
         """
-        retrieval_query = self._build_retrieval_query(
+        base_retrieval_query = self._build_retrieval_query(
             question=question,
+            conversation_history=conversation_history or [],
+        )
+        retrieval_query = self.query_rewriter.rewrite(
+            question=base_retrieval_query,
             conversation_history=conversation_history or [],
         )
 
@@ -374,6 +403,33 @@ class RagService:
 
                     if content:
                         yield content
+
+
+    def _prepare_retrieval_query(
+        self,
+        *,
+        question: str,
+        conversation_history: list[dict],
+    ) -> tuple[str, str]:
+        """
+        Prépare la requête utilisée pour le retrieval.
+
+        Retourne :
+        - base_retrieval_query : question enrichie avec l'historique court ;
+        - retrieval_query : question éventuellement reformulée par LLM.
+        """
+        base_retrieval_query = self._build_retrieval_query(
+            question=question,
+            conversation_history=conversation_history,
+        )
+
+        retrieval_query = self.query_rewriter.rewrite(
+            question=base_retrieval_query,
+            conversation_history=conversation_history,
+            model_name=self._get_vllm_model_name(),
+        )
+
+        return base_retrieval_query, retrieval_query
 
 
     def _build_retrieval_query(
