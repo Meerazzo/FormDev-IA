@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-
+import json
 import httpx
 
 from core.config import settings
@@ -44,9 +44,6 @@ class RagQueryRewriter:
         if not question or not conversation_history:
             return question
 
-        if not self._looks_like_follow_up(question):
-            return question
-
         messages = self._build_messages(
             question=question,
             conversation_history=conversation_history,
@@ -60,7 +57,7 @@ class RagQueryRewriter:
                         "model": model_name,
                         "messages": messages,
                         "temperature": 0.0,
-                        "max_tokens": 96,
+                        "max_tokens": 160,
                         "stream": False,
                     },
                 )
@@ -68,19 +65,19 @@ class RagQueryRewriter:
             response.raise_for_status()
             payload = response.json()
 
-            rewritten = (
+            content = (
                 payload.get("choices", [{}])[0]
                 .get("message", {})
                 .get("content", "")
                 .strip()
             )
 
-            rewritten = self._clean_rewritten_query(rewritten)
+            rewritten = self._extract_standalone_query(
+                content=content,
+                fallback_question=question,
+            )
 
-            if not rewritten:
-                return question
-
-            return rewritten
+            return rewritten or question
 
         except Exception as exc:
             logger.warning("RAG query rewriting failed: %s", exc)
@@ -96,14 +93,15 @@ class RagQueryRewriter:
 
         system_prompt = (
             "Tu es un module de reformulation de requêtes pour un moteur RAG. "
-            "Ta tâche est de transformer une question de suivi en question autonome. "
-            "Utilise l'historique uniquement pour résoudre les références implicites "
-            "comme 'cette offre', 'ce tarif', 'elle', 'ça', etc. "
+            "Tu dois analyser l'historique récent et la question actuelle. "
+            "Retourne uniquement un JSON valide, sans texte autour. "
+            "Le JSON doit avoir exactement cette structure : "
+            "{\"is_follow_up\": true ou false, \"standalone_query\": \"question autonome\"}. "
+            "Si la question dépend de l'historique, reformule-la pour qu'elle soit autonome. "
+            "Si la question est déjà autonome, mets is_follow_up à false et retourne la question originale dans standalone_query. "
             "Ne réponds jamais à la question. "
             "Ne donne aucune explication. "
-            "Ne cite aucune source. "
-            "Retourne uniquement la question reformulée. "
-            "Si la question est déjà autonome, retourne-la telle quelle."
+            "Ne cite aucune source."
         )
 
         user_prompt = (
@@ -111,7 +109,7 @@ class RagQueryRewriter:
             f"{formatted_history}\n\n"
             "Question actuelle :\n"
             f"{question}\n\n"
-            "Question autonome reformulée :"
+            "JSON attendu :"
         )
 
         return [
@@ -145,49 +143,7 @@ class RagQueryRewriter:
 
         return "\n".join(lines) if lines else "Aucun historique."
 
-    def _looks_like_follow_up(self, question: str) -> bool:
-        lowered = question.lower().strip()
-
-        follow_up_markers = [
-            "cette offre",
-            "cet offre",
-            "cette formule",
-            "ce forfait",
-            "ce pack",
-            "cette option",
-            "ce tarif",
-            "ce prix",
-            "ce montant",
-            "cette fonctionnalité",
-            "ces fonctionnalités",
-            "ce document",
-            "cette source",
-            "cette réponse",
-            "celle-ci",
-            "celui-ci",
-            "celui là",
-            "celle là",
-            "celui-là",
-            "celle-là",
-            "ça",
-            "cela",
-            "lui",
-            "leur",
-            "et qu",
-            "et est-ce",
-            "et ça",
-        ]
-
-        if any(marker in lowered for marker in follow_up_markers):
-            return True
-
-        token_count = len(lowered.replace("?", "").split())
-
-        if token_count <= 7 and lowered.startswith(("et ", "mais ", "donc ", "alors ")):
-            return True
-
-        return False
-
+    
     def _clean_rewritten_query(self, rewritten: str) -> str:
         rewritten = rewritten.strip()
 
@@ -215,3 +171,30 @@ class RagQueryRewriter:
             return ""
 
         return rewritten
+
+    def _extract_standalone_query(
+        self,
+        *,
+        content: str,
+        fallback_question: str,
+    ) -> str:
+        content = (content or "").strip()
+
+        if not content:
+            return fallback_question
+
+        try:
+            data = json.loads(content)
+        except Exception:
+            # fallback si le modèle ne respecte pas parfaitement le JSON
+            return self._clean_rewritten_query(content) or fallback_question
+
+        standalone_query = str(data.get("standalone_query", "")).strip()
+
+        if not standalone_query:
+            return fallback_question
+
+        if len(standalone_query) > 400:
+            return fallback_question
+
+        return standalone_query
