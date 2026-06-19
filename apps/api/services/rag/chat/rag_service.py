@@ -86,6 +86,7 @@ class RagService:
         corpus_id: str,
         question: str,
         retrieval: dict,
+        retrieval_metadata: dict | None = None,
     ) -> RagChatResponse:
         """Construit une réponse fallback quand le contexte documentaire est insuffisant."""
         return RagChatResponse(
@@ -100,6 +101,7 @@ class RagService:
             retrieval_candidates_count=retrieval.get("initial_candidates_count", 0),
             filtered_chunks_count=retrieval.get("filtered_candidates_count", 0),
             metadata={
+                **(retrieval_metadata or {}),
                 "fallback": True,
                 "fallback_reason": "insufficient_retrieval_score",
                 "min_relevant_score": settings.RAG_MIN_RELEVANT_SCORE,
@@ -126,13 +128,13 @@ class RagService:
         max_tokens: int,
         conversation_history: list[dict] | None = None,
     ) -> RagChatResponse:
-        base_retrieval_query = self._build_retrieval_query(
+        base_retrieval_query, retrieval_query = self._prepare_retrieval_query(
             question=question,
             conversation_history=conversation_history or [],
         )
-        retrieval_query = self.query_rewriter.rewrite(
-            question=base_retrieval_query,
-            conversation_history=conversation_history or [],
+        retrieval_metadata = self._build_retrieval_metadata(
+            base_retrieval_query=base_retrieval_query,
+            retrieval_query=retrieval_query,
         )
 
         query_vector = self.embedding_service.embed_query(retrieval_query)
@@ -173,6 +175,11 @@ class RagService:
                 top_score=retrieval["top_score"],
                 retrieval_candidates_count=retrieval["initial_candidates_count"],
                 filtered_chunks_count=retrieval["filtered_candidates_count"],
+                metadata={
+                    **retrieval_metadata,
+                    "fallback": True,
+                    "fallback_reason": "no_retrieved_chunks",
+                },
             )
 
         if not self._has_enough_relevance(chunks):
@@ -181,6 +188,7 @@ class RagService:
                 corpus_id=corpus_id,
                 question=question,
                 retrieval=retrieval,
+                retrieval_metadata=retrieval_metadata,
             )
 
         messages = self.prompt_builder.build_messages(
@@ -209,6 +217,7 @@ class RagService:
             top_score=retrieval["top_score"],
             retrieval_candidates_count=retrieval["initial_candidates_count"],
             filtered_chunks_count=retrieval["filtered_candidates_count"],
+            metadata=retrieval_metadata,
         )
 
 
@@ -232,13 +241,13 @@ class RagService:
         - sources
         - done
         """
-        base_retrieval_query = self._build_retrieval_query(
+        base_retrieval_query, retrieval_query = self._prepare_retrieval_query(
             question=question,
             conversation_history=conversation_history or [],
         )
-        retrieval_query = self.query_rewriter.rewrite(
-            question=base_retrieval_query,
-            conversation_history=conversation_history or [],
+        retrieval_metadata = self._build_retrieval_metadata(
+            base_retrieval_query=base_retrieval_query,
+            retrieval_query=retrieval_query,
         )
 
         query_vector = self.embedding_service.embed_query(retrieval_query)
@@ -291,6 +300,7 @@ class RagService:
                     "retrieval_candidates_count": retrieval.get("initial_candidates_count", 0),
                     "filtered_chunks_count": retrieval.get("filtered_candidates_count", 0),
                     "fallback": True,
+                    "metadata": retrieval_metadata,
                 },
             }
 
@@ -345,6 +355,7 @@ class RagService:
                 "retrieval_candidates_count": retrieval["initial_candidates_count"],
                 "filtered_chunks_count": retrieval["filtered_candidates_count"],
                 "fallback": False,
+                "metadata": retrieval_metadata,
             },
         }
 
@@ -423,11 +434,16 @@ class RagService:
             conversation_history=conversation_history,
         )
 
-        retrieval_query = self.query_rewriter.rewrite(
-            question=base_retrieval_query,
+        rewritten_query = self.query_rewriter.rewrite(
+            question=question,
             conversation_history=conversation_history,
             model_name=self._get_vllm_model_name(),
         )
+
+        if rewritten_query and rewritten_query != question:
+            retrieval_query = rewritten_query
+        else:
+            retrieval_query = base_retrieval_query
 
         return base_retrieval_query, retrieval_query
 
