@@ -861,6 +861,7 @@ async def chat_with_rag_stream(
                 content=final_answer,
                 sources=final_sources,
                 metadata={
+                    **(done_payload.get("metadata") or {}),
                     "stream": True,
                     "used_chunks_count": done_payload.get("used_chunks_count", 0),
                     "retrieval_confidence": done_payload.get("retrieval_confidence"),
@@ -991,6 +992,7 @@ async def rag_chat(
         content=response.answer,
         sources=sources_payload,
         metadata={
+            **(response.metadata or {}),
             "used_chunks_count": response.used_chunks_count,
             "retrieval_confidence": response.retrieval_confidence,
             "top_score": response.top_score,
