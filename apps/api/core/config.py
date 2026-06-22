@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 120
 
     RAG_STORAGE_DIR: str = "/data/rag"
+
+    # Parsing URL
+    # basic = parser historique httpx/trafilatura
+    # crawl4ai = navigateur Crawl4AI + raw_markdown + nettoyage léger
+    # auto = Crawl4AI puis fallback basic en cas d'erreur
+    RAG_URL_PARSER_BACKEND: str = "basic"
+    RAG_CRAWL4AI_LIGHT_CLEANING: bool = True
     RQ_RAG_QUEUE: str = "rag"
 
 settings = Settings()

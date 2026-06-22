@@ -24,3 +24,6 @@ python-docx
 trafilatura
 beautifulsoup4
 fastembed
+
+# URL extraction avancée pour le RAG web
+crawl4ai==0.9.0

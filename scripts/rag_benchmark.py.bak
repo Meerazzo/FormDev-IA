@@ -1080,7 +1080,7 @@ class RagBenchmark:
             "corpus_id": self.url_corpus_id,
             "conversation_id": None,
             "question": question,
-            "top_k": 10,
+            "top_k": 5,
             "score_threshold": None,
             "temperature": 0.2,
             "max_tokens": 700,
