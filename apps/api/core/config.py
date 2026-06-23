@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # auto = Crawl4AI puis fallback basic en cas d'erreur
     RAG_URL_PARSER_BACKEND: str = "basic"
     RAG_CRAWL4AI_LIGHT_CLEANING: bool = True
+    RAG_PDF_USE_OCR: bool = False
     RQ_RAG_QUEUE: str = "rag"
 
 settings = Settings()
