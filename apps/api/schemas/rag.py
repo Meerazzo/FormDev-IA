@@ -122,6 +122,7 @@ class RagSourceResponse(BaseModel):
     source_uri: str | None = None
     qdrant_points_count: int = 0
     error_message: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {
         "json_schema_extra": {
@@ -138,6 +139,15 @@ class RagSourceResponse(BaseModel):
             }
         }
     }
+
+class RagSourceUpdateRequest(BaseModel):
+    """Demande de mise à jour d'une source RAG."""
+
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str | None = Field(default=None, min_length=1)
+    source_name: str | None = Field(default=None, min_length=1, max_length=300)
+    metadata: dict[str, Any] | None = None
+
 
 class RagUrlIngestRequest(BaseModel):
     """Demande d'ingestion d'une URL."""

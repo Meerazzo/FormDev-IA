@@ -29,6 +29,7 @@ class RagSourceService:
             status=source.status,
             qdrant_points_count=source.qdrant_points_count or 0,
             error_message=source.error_message,
+            metadata=source.metadata_json or {},
         )
 
     def create_url_source(
@@ -65,6 +66,48 @@ class RagSourceService:
         )
 
         return [self.to_response(source) for source in sources]
+
+    def get_source(
+        self,
+        *,
+        source_id: str,
+        client_id: str,
+        corpus_id: str | None = None,
+    ) -> RagSourceResponse | None:
+        source = self.repository.get_for_client(
+            source_id=source_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            include_deleted=False,
+        )
+
+        if source is None:
+            return None
+
+        return self.to_response(source)
+
+    def update_source(
+        self,
+        *,
+        source_id: str,
+        client_id: str,
+        corpus_id: str | None = None,
+        source_name: str | None = None,
+        metadata: dict | None = None,
+    ) -> RagSourceResponse | None:
+        source = self.repository.update_source(
+            source_id=source_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            source_name=source_name,
+            metadata_json=metadata,
+        )
+
+        if source is None:
+            return None
+
+        return self.to_response(source)
+
 
     def mark_deleted(self, source_id: str) -> RagSourceResponse | None:
         source = self.repository.mark_deleted(source_id)

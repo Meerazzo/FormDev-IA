@@ -59,6 +59,27 @@ class RagSourceRepository:
             .first()
         )
 
+    def get_for_client(
+        self,
+        *,
+        source_id: str,
+        client_id: str,
+        corpus_id: str | None = None,
+        include_deleted: bool = False,
+    ) -> RagSource | None:
+        query = self.db.query(RagSource).filter(
+            RagSource.source_id == source_id,
+            RagSource.client_id == client_id,
+        )
+
+        if corpus_id:
+            query = query.filter(RagSource.corpus_id == corpus_id)
+
+        if not include_deleted:
+            query = query.filter(RagSource.status != "deleted")
+
+        return query.first()
+
     def find_duplicate_by_hash(
         self,
         *,
@@ -181,6 +202,37 @@ class RagSourceRepository:
             query = query.filter(RagSource.status != "deleted")
 
         return query.order_by(RagSource.created_at.desc()).all()
+
+    def update_source(
+        self,
+        *,
+        source_id: str,
+        client_id: str,
+        corpus_id: str | None = None,
+        source_name: str | None = None,
+        metadata_json: dict | None = None,
+    ) -> RagSource | None:
+        source = self.get_for_client(
+            source_id=source_id,
+            client_id=client_id,
+            corpus_id=corpus_id,
+            include_deleted=False,
+        )
+
+        if source is None:
+            return None
+
+        if source_name is not None:
+            source.source_name = source_name
+
+        if metadata_json is not None:
+            source.metadata_json = metadata_json
+
+        self.db.commit()
+        self.db.refresh(source)
+
+        return source
+
 
     @staticmethod
     def normalize_source_uri(source_uri: str) -> str:
