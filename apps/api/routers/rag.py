@@ -15,6 +15,7 @@ from schemas.rag import (
     RagCorpusListResponse,
     RagHealthResponse,
     RagSourceResponse,
+    RagSourceUpdateRequest,
     RagUploadResponse,
     RagUrlIngestPreviewResponse,
     RagUrlIngestRequest,
@@ -440,6 +441,80 @@ async def list_sources(
         corpus_id=corpus_id,
         include_deleted=include_deleted,
     )
+
+
+@router.get(
+    "/sources/{source_id}",
+    response_description="Source trouvée",
+    response_model=RagSourceResponse,
+    summary="Récupérer une source RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def get_rag_source(
+    request: Request,
+    source_id: str,
+    client_id: str = Query(...),
+    corpus_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagSourceResponse:
+    """
+    Récupère les métadonnées d'une source documentaire RAG.
+
+    La source doit appartenir au client fourni. Si corpus_id est fourni,
+    la source doit aussi appartenir à ce corpus.
+    """
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+    source = service.get_source(
+        source_id=source_id,
+        client_id=client_id,
+        corpus_id=corpus_id,
+    )
+
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source RAG introuvable")
+
+    return source
+
+
+@router.patch(
+    "/sources/{source_id}",
+    response_description="Source mise à jour",
+    response_model=RagSourceResponse,
+    summary="Mettre à jour une source RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def update_rag_source(
+    request: Request,
+    source_id: str,
+    payload: RagSourceUpdateRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagSourceResponse:
+    """
+    Met à jour les métadonnées légères d'une source documentaire.
+
+    Cette route ne modifie pas le contenu du document et ne déclenche pas de
+    réindexation. Pour reconstruire les chunks, utiliser /rag/sources/{source_id}/reindex.
+    """
+    authenticate(api_key)
+
+    service = RagSourceService(db)
+    source = service.update_source(
+        source_id=source_id,
+        client_id=payload.client_id,
+        corpus_id=payload.corpus_id,
+        source_name=payload.source_name,
+        metadata=payload.metadata,
+    )
+
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source RAG introuvable")
+
+    return source
+
 
 @router.post(
     "/sources/{source_id}/index",
