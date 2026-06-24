@@ -63,6 +63,35 @@ class RagHealthResponse(BaseModel):
         }
     }
 
+class RagCorpusCreateRequest(BaseModel):
+    """Demande de création d'un corpus RAG."""
+
+    client_id: str = Field(..., min_length=1)
+    corpus_id: str = Field(..., min_length=1, max_length=120)
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class RagCorpusUpdateRequest(BaseModel):
+    """Demande de mise à jour d'un corpus RAG."""
+
+    client_id: str = Field(..., min_length=1)
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+
+
+class RagCorpusDeleteResponse(BaseModel):
+    """Réponse de suppression logique d'un corpus RAG."""
+
+    client_id: str
+    corpus_id: str
+    deleted: bool
+    sources_deleted_count: int = 0
+    qdrant_sources_deleted_count: int = 0
+    message: str
+
+
 class RagCorpusResponse(BaseModel):
     """Vue API d'un corpus RAG."""
 

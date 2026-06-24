@@ -28,6 +28,37 @@ class RagCorpusRepository:
             .first()
         )
 
+    def create(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> RagCorpus:
+        existing = self.get_for_client(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if existing is not None:
+            raise ValueError("Corpus RAG déjà existant")
+
+        corpus = RagCorpus(
+            id=f"corp_{uuid4().hex}",
+            client_id=client_id,
+            corpus_id=corpus_id,
+            name=name or corpus_id,
+            description=description,
+            is_active=True,
+        )
+
+        self.db.add(corpus)
+        self.db.commit()
+        self.db.refresh(corpus)
+
+        return corpus
+
     def get_or_create(
         self,
         *,
@@ -58,6 +89,78 @@ class RagCorpusRepository:
         self.db.refresh(corpus)
 
         return corpus
+
+    def update(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        is_active: bool | None = None,
+    ) -> RagCorpus | None:
+        corpus = self.get_for_client(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if corpus is None:
+            return None
+
+        if name is not None:
+            corpus.name = name
+
+        if description is not None:
+            corpus.description = description
+
+        if is_active is not None:
+            corpus.is_active = is_active
+
+        self.db.commit()
+        self.db.refresh(corpus)
+
+        return corpus
+
+    def mark_inactive(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+    ) -> RagCorpus | None:
+        corpus = self.get_for_client(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if corpus is None:
+            return None
+
+        corpus.is_active = False
+
+        self.db.commit()
+        self.db.refresh(corpus)
+
+        return corpus
+
+    def to_response(self, corpus: RagCorpus) -> RagCorpusResponse:
+        counts = self._source_counts(
+            client_id=corpus.client_id,
+            corpus_id=corpus.corpus_id,
+        )
+
+        return RagCorpusResponse(
+            client_id=corpus.client_id,
+            corpus_id=corpus.corpus_id,
+            name=corpus.name,
+            description=corpus.description,
+            is_active=corpus.is_active,
+            sources_count=counts["sources_count"],
+            indexed_sources_count=counts["indexed_sources_count"],
+            pending_sources_count=counts["pending_sources_count"],
+            error_sources_count=counts["error_sources_count"],
+            created_at=corpus.created_at,
+            updated_at=corpus.updated_at,
+        )
 
     def list_by_client(
         self,
@@ -142,3 +245,38 @@ class RagCorpusRepository:
             RagCorpusResponse(**payload)
             for _, payload in sorted(corpus_map.items(), key=sort_key)
         ]
+
+    def _source_counts(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+    ) -> dict:
+        sources = (
+            self.db.query(RagSource)
+            .filter(
+                RagSource.client_id == client_id,
+                RagSource.corpus_id == corpus_id,
+                RagSource.status != "deleted",
+            )
+            .all()
+        )
+
+        counts = {
+            "sources_count": 0,
+            "indexed_sources_count": 0,
+            "pending_sources_count": 0,
+            "error_sources_count": 0,
+        }
+
+        for source in sources:
+            counts["sources_count"] += 1
+
+            if source.status == "indexed":
+                counts["indexed_sources_count"] += 1
+            elif source.status in {"pending", "indexing"}:
+                counts["pending_sources_count"] += 1
+            elif source.status == "error":
+                counts["error_sources_count"] += 1
+
+        return counts

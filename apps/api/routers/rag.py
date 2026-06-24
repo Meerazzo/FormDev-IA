@@ -12,7 +12,11 @@ from core.rate_limit import limiter
 from core.security import authenticate
 from db.session import get_db
 from schemas.rag import (
+    RagCorpusCreateRequest,
+    RagCorpusUpdateRequest,
+    RagCorpusDeleteResponse,
     RagCorpusListResponse,
+    RagCorpusResponse,
     RagHealthResponse,
     RagSourceResponse,
     RagUploadResponse,
@@ -44,6 +48,7 @@ from services.rag.vectorstore.rag_vector_store import RagVectorStore
 from services.rag.indexing.indexing_service import RagIndexingService
 from services.rag.chat.rag_service import RagService
 from services.rag.corpora.corpus_repository import RagCorpusRepository
+from services.rag.corpora.corpus_lifecycle_service import RagCorpusLifecycleService
 from services.rag.jobs.job_repository import RagJobRepository
 from services.rag.conversations.conversation_repository import RagConversationRepository
 from services.rag.sources.source_repository import RagSourceRepository
@@ -379,6 +384,142 @@ async def list_rag_corpora(
         corpora_count=len(corpora),
         corpora=corpora,
     )
+
+
+
+@router.post(
+    "/corpora",
+    response_description="Corpus créé",
+    response_model=RagCorpusResponse,
+    summary="Créer un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def create_rag_corpus(
+    request: Request,
+    payload: RagCorpusCreateRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusResponse:
+    """
+    Crée explicitement un corpus documentaire vide pour un client.
+
+    Les sources ajoutées plus tard pourront cibler ce corpus via corpus_id.
+    """
+    authenticate(api_key)
+
+    repository = RagCorpusRepository(db)
+
+    try:
+        corpus = repository.create(
+            client_id=payload.client_id,
+            corpus_id=payload.corpus_id,
+            name=payload.name,
+            description=payload.description,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return repository.to_response(corpus)
+
+
+@router.get(
+    "/corpora/{corpus_id}",
+    response_description="Corpus trouvé",
+    response_model=RagCorpusResponse,
+    summary="Récupérer un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def get_rag_corpus(
+    request: Request,
+    corpus_id: str,
+    client_id: str = Query(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusResponse:
+    """
+    Récupère les métadonnées et compteurs d'un corpus documentaire.
+    """
+    authenticate(api_key)
+
+    repository = RagCorpusRepository(db)
+    corpus = repository.get_for_client(
+        client_id=client_id,
+        corpus_id=corpus_id,
+    )
+
+    if corpus is None or not corpus.is_active:
+        raise HTTPException(status_code=404, detail="Corpus RAG introuvable")
+
+    return repository.to_response(corpus)
+
+
+@router.patch(
+    "/corpora/{corpus_id}",
+    response_description="Corpus mis à jour",
+    response_model=RagCorpusResponse,
+    summary="Mettre à jour un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def update_rag_corpus(
+    request: Request,
+    corpus_id: str,
+    payload: RagCorpusUpdateRequest = Body(...),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusResponse:
+    """
+    Modifie le nom, la description ou l'état actif d'un corpus.
+    """
+    authenticate(api_key)
+
+    repository = RagCorpusRepository(db)
+    corpus = repository.update(
+        client_id=payload.client_id,
+        corpus_id=corpus_id,
+        name=payload.name,
+        description=payload.description,
+        is_active=payload.is_active,
+    )
+
+    if corpus is None:
+        raise HTTPException(status_code=404, detail="Corpus RAG introuvable")
+
+    return repository.to_response(corpus)
+
+
+@router.delete(
+    "/corpora/{corpus_id}",
+    response_description="Corpus supprimé",
+    response_model=RagCorpusDeleteResponse,
+    summary="Supprimer logiquement un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def delete_rag_corpus(
+    request: Request,
+    corpus_id: str,
+    client_id: str = Query(...),
+    delete_sources: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusDeleteResponse:
+    """
+    Supprime logiquement un corpus.
+
+    Par défaut, les sources du corpus sont aussi marquées deleted et les points
+    Qdrant associés sont supprimés.
+    """
+    authenticate(api_key)
+
+    service = RagCorpusLifecycleService(db)
+
+    try:
+        return service.delete_corpus(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            delete_sources=delete_sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get(
