@@ -59,6 +59,190 @@ class RagService:
 
         return best_score >= settings.RAG_MIN_RELEVANT_SCORE
 
+    def _should_run_answerability_gate(self, retrieval: dict) -> bool:
+        """Décide si un contrôle d'answerability doit être lancé."""
+        if not settings.RAG_ANSWERABILITY_GATE_ENABLED:
+            return False
+
+        confidence = retrieval.get("retrieval_confidence")
+        configured_levels = {
+            level.strip().lower()
+            for level in settings.RAG_ANSWERABILITY_GATE_CONFIDENCE_LEVELS.split(",")
+            if level.strip()
+        }
+
+        return str(confidence or "").lower() in configured_levels
+
+    def _evaluate_answerability(
+        self,
+        *,
+        question: str,
+        chunks: list,
+        retrieval_confidence: str,
+    ) -> dict:
+        """
+        Vérifie si les chunks récupérés contiennent réellement l'information
+        nécessaire pour répondre à la question.
+
+        Cette étape évite de dépendre uniquement du score vectoriel.
+        """
+        messages = self._build_answerability_messages(
+            question=question,
+            chunks=chunks,
+            retrieval_confidence=retrieval_confidence,
+        )
+
+        raw_answer = self._call_vllm(
+            messages=messages,
+            temperature=0.0,
+            max_tokens=256,
+        )
+
+        return self._parse_answerability_result(raw_answer)
+
+    def _build_answerability_messages(
+        self,
+        *,
+        question: str,
+        chunks: list,
+        retrieval_confidence: str,
+    ) -> list[dict]:
+        selected_chunks = chunks[: settings.RAG_ANSWERABILITY_GATE_MAX_CHUNKS]
+        remaining_chars = settings.RAG_ANSWERABILITY_GATE_MAX_CONTEXT_CHARS
+
+        context_parts: list[str] = []
+
+        for index, chunk in enumerate(selected_chunks, start=1):
+            text = ""
+
+            if isinstance(chunk, dict):
+                text = chunk.get("text") or ""
+                score = chunk.get("score")
+            else:
+                text = getattr(chunk, "text", "") or ""
+                score = getattr(chunk, "score", None)
+
+            text = str(text).strip()
+            if not text:
+                continue
+
+            if remaining_chars <= 0:
+                break
+
+            clipped_text = text[:remaining_chars]
+            remaining_chars -= len(clipped_text)
+
+            context_parts.append(
+                f"[CHUNK {index}] score={score}\n{clipped_text}"
+            )
+
+        context = "\n\n".join(context_parts)
+
+        system_prompt = (
+            "Tu es un vérificateur de contexte pour un système RAG. "
+            "Ton rôle est de déterminer si les extraits fournis contiennent "
+            "réellement l'information nécessaire pour répondre à la question. "
+            "Tu ne dois pas répondre à la question. "
+            "Tu dois seulement renvoyer un JSON valide."
+        )
+
+        user_prompt = f"""
+Question utilisateur :
+{question}
+
+Niveau de confiance retrieval :
+{retrieval_confidence}
+
+Extraits récupérés :
+{context}
+
+Réponds uniquement avec un JSON strict au format suivant :
+{{
+  "answerable": true ou false,
+  "reason": "explication courte",
+  "supporting_chunk_indexes": [1, 2]
+}}
+
+Règles :
+- answerable=true seulement si les extraits contiennent directement l'information demandée.
+- answerable=false si les extraits parlent d'un autre sujet.
+- answerable=false si les extraits sont seulement vaguement liés lexicalement.
+- answerable=false si une réponse nécessiterait d'inventer ou de compléter avec des connaissances externes.
+- supporting_chunk_indexes doit contenir uniquement les chunks qui justifient réellement la réponse.
+""".strip()
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_answerability_result(self, raw_answer: str) -> dict:
+        raw_answer = (raw_answer or "").strip()
+
+        default = {
+            "answerable": False,
+            "reason": "answerability_gate_parse_error",
+            "supporting_chunk_indexes": [],
+            "raw_answer": raw_answer,
+        }
+
+        if not raw_answer:
+            return default
+
+        try:
+            parsed = json.loads(raw_answer)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
+            if not match:
+                return default
+
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return default
+
+        answerable = bool(parsed.get("answerable"))
+
+        supporting_chunk_indexes = parsed.get("supporting_chunk_indexes") or []
+        if not isinstance(supporting_chunk_indexes, list):
+            supporting_chunk_indexes = []
+
+        return {
+            "answerable": answerable,
+            "reason": str(parsed.get("reason") or ""),
+            "supporting_chunk_indexes": supporting_chunk_indexes,
+            "raw_answer": raw_answer,
+        }
+
+    def _build_answerability_fallback_response(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+        question: str,
+        retrieval: dict,
+        retrieval_metadata: dict,
+        answerability: dict,
+    ) -> RagChatResponse:
+        return RagChatResponse(
+            client_id=client_id,
+            corpus_id=corpus_id,
+            question=question,
+            answer=STRICT_RAG_FALLBACK_ANSWER,
+            sources=[],
+            used_chunks_count=0,
+            retrieval_confidence="low",
+            top_score=retrieval.get("top_score"),
+            retrieval_candidates_count=retrieval.get("initial_candidates_count", 0),
+            filtered_chunks_count=retrieval.get("filtered_candidates_count", 0),
+            metadata={
+                **retrieval_metadata,
+                "fallback": True,
+                "fallback_reason": "answerability_gate_not_answerable",
+                "answerability": answerability,
+            },
+        )
+
     def _build_retrieval_metadata(
         self,
         *,
@@ -191,6 +375,25 @@ class RagService:
                 retrieval_metadata=retrieval_metadata,
             )
 
+        if self._should_run_answerability_gate(retrieval):
+            answerability = self._evaluate_answerability(
+                question=question,
+                chunks=chunks,
+                retrieval_confidence=retrieval["retrieval_confidence"],
+            )
+
+            retrieval_metadata["answerability"] = answerability
+
+            if not answerability.get("answerable"):
+                return self._build_answerability_fallback_response(
+                    client_id=client_id,
+                    corpus_id=corpus_id,
+                    question=question,
+                    retrieval=retrieval,
+                    retrieval_metadata=retrieval_metadata,
+                    answerability=answerability,
+                )
+
         messages = self.prompt_builder.build_messages(
             question=question,
             context_chunks=chunks,
@@ -305,6 +508,52 @@ class RagService:
             }
 
             return
+
+        if self._should_run_answerability_gate(retrieval):
+            answerability = self._evaluate_answerability(
+                question=question,
+                chunks=chunks,
+                retrieval_confidence=retrieval["retrieval_confidence"],
+            )
+
+            retrieval_metadata["answerability"] = answerability
+
+            if not answerability.get("answerable"):
+                fallback_answer = STRICT_RAG_FALLBACK_ANSWER
+
+                yield {
+                    "event": "token",
+                    "data": {
+                        "content": fallback_answer,
+                    },
+                }
+
+                yield {
+                    "event": "sources",
+                    "data": {
+                        "sources": [],
+                    },
+                }
+
+                yield {
+                    "event": "done",
+                    "data": {
+                        "answer": fallback_answer,
+                        "used_chunks_count": 0,
+                        "retrieval_confidence": "low",
+                        "top_score": retrieval.get("top_score"),
+                        "retrieval_candidates_count": retrieval.get("initial_candidates_count", 0),
+                        "filtered_chunks_count": retrieval.get("filtered_candidates_count", 0),
+                        "fallback": True,
+                        "metadata": {
+                            **retrieval_metadata,
+                            "fallback": True,
+                            "fallback_reason": "answerability_gate_not_answerable",
+                        },
+                    },
+                }
+
+                return
 
         messages = self.prompt_builder.build_messages(
             question=question,
