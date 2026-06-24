@@ -15,7 +15,7 @@ from services.rag.indexing.indexing_service import RagIndexingService
 from services.rag.ingestion.exceptions import DuplicateSourceError
 from services.rag.ingestion.chunker import RagChunker
 from services.rag.ingestion.parsers.resolver import ParserResolver
-from services.rag.ingestion.parsers.url_parser import UrlParser
+from services.rag.ingestion.parsers.url_parser_factory import parse_url_document
 from services.rag.sources.source_repository import RagSourceRepository
 
 
@@ -144,8 +144,7 @@ class RagIngestService:
                 existing_source=duplicate,
             )
 
-        parser = UrlParser()
-        parsed_document = parser.parse_url(normalized_url)
+        parsed_document = parse_url_document(normalized_url)
 
         final_source_name = source_name or parsed_document.metadata.get("title") or url
         safe_source_name = self._safe_filename(final_source_name)[:120] or "url_source"
@@ -385,8 +384,7 @@ class RagIngestService:
         storage_dir = self._build_storage_dir(client_id=source.client_id)
         storage_dir.mkdir(parents=True, exist_ok=True)
 
-        parser = UrlParser()
-        parsed_document = parser.parse_url(source.source_uri)
+        parsed_document = parse_url_document(source.source_uri)
 
         chunks = self.chunker.chunk_pages(parsed_document.pages)
 

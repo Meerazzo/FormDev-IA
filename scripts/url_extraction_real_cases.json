@@ -1,0 +1,57 @@
+[
+  {
+    "name": "wiki_ia_apprentissage_automatique",
+    "url": "https://fr.wikipedia.org/wiki/Apprentissage_automatique",
+    "expected_keywords": ["apprentissage automatique", "supervisé", "régression", "classification"]
+  },
+  {
+    "name": "docs_tech_mdn_javascript",
+    "url": "https://developer.mozilla.org/fr/docs/Web/JavaScript/Guide",
+    "expected_keywords": ["Guide JavaScript", "fonctions", "objets", "promesses"]
+  },
+  {
+    "name": "docs_tech_python_tutoriel",
+    "url": "https://docs.python.org/fr/3/tutorial/index.html",
+    "expected_keywords": ["Le tutoriel Python", "interpréteur", "modules", "classes"]
+  },
+  {
+    "name": "business_pricing_stripe",
+    "url": "https://stripe.com/fr/pricing",
+    "expected_keywords": ["tarifs", "paiements", "cartes", "Stripe"]
+  },
+  {
+    "name": "business_formdev_tarifs",
+    "url": "https://www.form-dev.fr/tarifs/",
+    "expected_keywords": ["Multi société", "80", "Tarif", "Plugin WordPress"]
+  },
+  {
+    "name": "formation_openclassrooms_python",
+    "url": "https://openclassrooms.com/fr/courses/7168871-apprenez-les-bases-du-langage-python",
+    "expected_keywords": ["Python", "cours", "variables", "fonctions"]
+  },
+  {
+    "name": "cours_python_cs_circles",
+    "url": "https://cscircles.cemc.uwaterloo.ca/fr/",
+    "expected_keywords": ["Python", "exercices", "programmation"]
+  },
+  {
+    "name": "sport_sante_oms_activite_physique",
+    "url": "https://www.who.int/fr/news-room/fact-sheets/detail/physical-activity",
+    "expected_keywords": ["activité physique", "santé", "adultes", "recommandations"]
+  },
+  {
+    "name": "reglementation_service_public_formation",
+    "url": "https://entreprendre.service-public.fr/vosdroits/F19087",
+    "expected_keywords": ["formation professionnelle", "déclaration", "activité"]
+  },
+  {
+    "name": "js_test_quotes",
+    "url": "https://quotes.toscrape.com/js/",
+    "expected_keywords": ["Albert Einstein", "Quotes", "Tags"]
+  },
+  {
+    "name": "scroll_test_quotes",
+    "url": "https://quotes.toscrape.com/scroll",
+    "expected_keywords": ["Albert Einstein", "Loading"]
+  }
+]

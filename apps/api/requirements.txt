@@ -19,8 +19,12 @@ redis==7.4.0
 graypy==2.1.0
 
 python-multipart
-pymupdf
 python-docx
 trafilatura
 beautifulsoup4
 fastembed
+
+# URL extraction avancée pour le RAG web
+crawl4ai==0.9.0
+pymupdf4llm==1.27.2.3
+mammoth==1.12.0
