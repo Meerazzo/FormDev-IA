@@ -150,6 +150,19 @@ def _operation_id(method: str, path: str) -> str:
     return f"{method.lower()}_{normalized_path}" if normalized_path else method.lower()
 
 
+def _find_api_key_scheme_name(security_schemes: dict[str, Any]) -> str | None:
+    for scheme_name, scheme in security_schemes.items():
+        if not isinstance(scheme, dict):
+            continue
+        if (
+            scheme.get("type") == "apiKey"
+            and scheme.get("in") == "header"
+            and scheme.get("name") == "X-API-Key"
+        ):
+            return scheme_name
+    return None
+
+
 def install_custom_openapi(app: FastAPI) -> None:
     """Installe une couche de finition OpenAPI sans modifier la logique des routers."""
 
@@ -167,15 +180,11 @@ def install_custom_openapi(app: FastAPI) -> None:
 
         components = schema.setdefault("components", {})
         security_schemes = components.setdefault("securitySchemes", {})
-        security_schemes.setdefault(
-            "XApiKeyAuth",
-            {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-API-Key",
-                "description": "Clé API client FormDev. À fournir sur les routes métier.",
-            },
-        )
+        api_key_scheme_name = _find_api_key_scheme_name(security_schemes)
+        if api_key_scheme_name:
+            security_schemes[api_key_scheme_name]["description"] = (
+                "Clé API client FormDev. À fournir sur les routes métier via le header X-API-Key."
+            )
 
         for path, path_item in schema.get("paths", {}).items():
             for method, operation in path_item.items():
@@ -190,8 +199,8 @@ def install_custom_openapi(app: FastAPI) -> None:
                 for code, response in DEFAULT_ERROR_RESPONSES.items():
                     responses.setdefault(code, response)
 
-                if path != "/health":
-                    operation.setdefault("security", [{"XApiKeyAuth": []}])
+                if path != "/health" and api_key_scheme_name:
+                    operation["security"] = [{api_key_scheme_name: []}]
 
         app.openapi_schema = schema
         return app.openapi_schema
