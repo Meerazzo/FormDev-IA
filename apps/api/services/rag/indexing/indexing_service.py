@@ -23,7 +23,8 @@ class RagIndexingService:
     Service d'indexation RAG.
 
     Il lit les fichiers .chunks.json, calcule les embeddings,
-    insère les points dans Qdrant puis met à jour la source en base.
+    remplace les anciens points Qdrant de la source, insère les nouveaux
+    points puis met à jour la source en base.
     """
 
     def __init__(self, db: Session) -> None:
@@ -52,6 +53,16 @@ class RagIndexingService:
         try:
             texts = [chunk["text"] for chunk in chunks]
             vectors = self.embedding_service.embed_texts(texts)
+
+            # Une source peut être indexée plusieurs fois directement ou via
+            # reindex/resync. On supprime donc les anciens points juste avant
+            # l'upsert pour éviter les chunks fantômes quand le nombre de
+            # chunks diminue entre deux versions d'une même source.
+            self.vector_store.delete_source(
+                client_id=source.client_id,
+                corpus_id=source.corpus_id,
+                source_id=source.source_id,
+            )
 
             indexed_count = self.vector_store.upsert_chunks(
                 chunks=chunks,
@@ -83,9 +94,9 @@ class RagIndexingService:
     def reindex_source(self, source_id: str) -> RagReindexSourceResponse:
         """
         Réindexe proprement une source :
-        1. supprime les anciens points Qdrant de cette source
-        2. relit le fichier .chunks.json
-        3. recalcule les embeddings
+        1. relit le fichier .chunks.json
+        2. recalcule les embeddings
+        3. supprime les anciens points Qdrant de cette source
         4. upsert les nouveaux points
         """
         source = self.source_repository.get_by_source_id(source_id)
@@ -95,12 +106,6 @@ class RagIndexingService:
 
         if source.status == "deleted":
             raise ValueError("Impossible de réindexer une source supprimée")
-
-        self.vector_store.delete_source(
-            client_id=source.client_id,
-            corpus_id=source.corpus_id,
-            source_id=source.source_id,
-        )
 
         index_response = self.index_source(source_id)
 
@@ -126,8 +131,8 @@ class RagIndexingService:
         Resynchronise les sources d'un corpus.
 
         Pour chaque source retenue :
-        - suppression des anciens points Qdrant
         - réindexation depuis le .chunks.json
+        - remplacement des anciens points Qdrant de la source
         """
         sources = self.source_repository.list_by_corpus(
             client_id=client_id,
