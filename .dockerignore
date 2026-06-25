@@ -43,7 +43,6 @@ models/
 
 # RAG / database local data
 /data/
-/data/
 *.sqlite
 *.sqlite3
 
