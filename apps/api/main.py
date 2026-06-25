@@ -223,6 +223,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description=OPENAPI_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
     )
 
     app.state.limiter = limiter
