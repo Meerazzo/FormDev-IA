@@ -22,4 +22,4 @@ infra/.env
 
 # Bench / résultats temporaires
 bench/results/
-reports/
+reports/.cache/
