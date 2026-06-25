@@ -67,6 +67,13 @@ x-prod-api-env: &prod-api-env
   RQ_RAG_QUEUE: ${RQ_RAG_PROD_QUEUE}
   RAG_STORAGE_DIR: /data/rag
 
+x-worker-healthcheck: &worker-healthcheck
+  test: ["CMD-SHELL", "python -c \"import os, redis; redis.Redis(host=os.environ['REDIS_HOST'], port=int(os.getenv('REDIS_PORT', 6379)), db=int(os.getenv('REDIS_DB', 0))).ping()\""]
+  interval: 10s
+  timeout: 5s
+  start_period: 5s
+  retries: 3
+
 services:
   # ----------------------------------------------------------
   # Shared inference service
@@ -171,6 +178,7 @@ services:
     volumes:
       - ../apps/api:/app
     command: ["python", "-m", "workers.survey_worker"]
+    healthcheck: *worker-healthcheck
     restart: unless-stopped
 
   worker-rag-dev:
@@ -189,6 +197,7 @@ services:
       - ../apps/api:/app
       - rag_data_dev:/data/rag
     command: ["python", "-m", "workers.rag_worker"]
+    healthcheck: *worker-healthcheck
     restart: unless-stopped
 
   # ----------------------------------------------------------
@@ -263,6 +272,7 @@ services:
     volumes:
       - ../apps/api:/app
     command: ["python", "-m", "workers.survey_worker"]
+    healthcheck: *worker-healthcheck
     restart: unless-stopped
 
   worker-rag-prod:
@@ -282,6 +292,7 @@ services:
       - ../apps/api:/app
       - rag_data_prod:/data/rag
     command: ["python", "-m", "workers.rag_worker"]
+    healthcheck: *worker-healthcheck
     restart: unless-stopped
 
   # ----------------------------------------------------------
