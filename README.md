@@ -8,13 +8,15 @@ Le projet fournit trois briques principales :
 - **Projet 2 — Chat IA** : une route de génération / transformation de texte (`/v1/chat`) via vLLM.
 - **Projet 3 — Surveys** : un pipeline d’analyse de questionnaires de satisfaction (`/surveys/*`) avec traitement asynchrone, segmentation en points, classification sentiment/catégorie, feedback opérateur et mémoire vectorielle par client.
 
+Pour aller plus loin, les détails d'architecture, d'exploitation et d'intégration client sont dans le dossier [`docs/`](docs/).
+
 ---
 
 ## Sommaire
 
 - [Vue d’ensemble](#vue-densemble)
-- [Architecture](#architecture)
 - [Documentation technique](#documentation-technique)
+- [Architecture](#architecture)
 - [Technologies](#technologies)
 - [Structure du projet](#structure-du-projet)
 - [Démarrage rapide](#démarrage-rapide)
@@ -41,9 +43,12 @@ Fonctions principales :
 - ingestion d’URLs ;
 - indexation vectorielle dans Qdrant ;
 - recherche documentaire filtrée par `client_id` et `corpus_id` ;
-- chat RAG avec sources ;
+- chat RAG JSON et streaming SSE ;
 - conversations RAG ;
+- jobs asynchrones d'upload, indexation, réindexation et resynchronisation ;
 - suppression de source avec suppression des points Qdrant associés.
+
+Documentation complémentaire : [Documentation client — RAG documentaire](docs/client-technique-rag.md) et [Architecture RAG détaillée](docs/rag_architecture.md).
 
 ### Projet 2 — Chat IA
 
@@ -62,6 +67,8 @@ L’API prend en charge :
 - l’injection d’un prompt système backend ;
 - une post-correction optionnelle par seconde inférence.
 
+Documentation complémentaire : [Documentation client — Chat IA](docs/client-technique-chat.md).
+
 ### Projet 3 — Surveys
 
 La route `/surveys/analyze` lance l’analyse asynchrone d’un ou plusieurs questionnaires de satisfaction.
@@ -76,6 +83,22 @@ Le pipeline réalise :
 6. le stockage du résultat final ;
 7. la relecture opérateur via `/surveys/feedback` ;
 8. l’alimentation de la mémoire vectorielle Qdrant pour améliorer les classifications futures.
+
+Documentation complémentaire : [Documentation client — Surveys](docs/client-technique-surveys.md).
+
+---
+
+## Documentation technique
+
+| Document | Contenu |
+| --- | --- |
+| [Architecture globale](docs/architecture.md) | Vue d'ensemble des modules Chat, Surveys et RAG, composants et flux |
+| [Runbook opérationnel](docs/runbook.md) | Lancement Docker, migrations, tests curl, logs et dépannage |
+| [Documentation client — Chat IA](docs/client-technique-chat.md) | Contrat d'intégration de `/v1/chat` |
+| [Documentation client — Surveys](docs/client-technique-surveys.md) | Contrat d'intégration de `/surveys/*` |
+| [Documentation client — RAG documentaire](docs/client-technique-rag.md) | Contrat d'intégration complet de `/rag/*` |
+| [Architecture RAG détaillée](docs/rag_architecture.md) | Cycle de vie des sources RAG, Qdrant, réindexation et conversations |
+| [Checklist de livraison finale](docs/final_delivery_checklist.md) | Suivi de la passe finale de nettoyage/livraison |
 
 ---
 
@@ -106,17 +129,7 @@ FastAPI
  Réponse texte          Résultat analyse        Réponse + sources
 ```
 
----
-
-## Documentation technique
-
-- [Architecture globale](docs/architecture.md)
-- [Runbook opérationnel](docs/runbook.md)
-- [Documentation client — Chat IA](docs/client-technique-chat.md)
-- [Documentation client — Surveys](docs/client-technique-surveys.md)
-- [Documentation client — RAG documentaire](docs/client-technique-rag.md)
-- [Architecture RAG détaillée](docs/rag_architecture.md)
-- [Checklist de livraison finale](docs/final_delivery_checklist.md)
+Pour le détail complet : [Architecture globale](docs/architecture.md).
 
 ---
 
@@ -209,6 +222,8 @@ http://localhost:<API_PORT>/docs
 
 Le port dépend de `API_DEV_PORT` ou `API_PROD_PORT` dans `infra/.env`.
 
+Voir aussi : [Runbook opérationnel](docs/runbook.md).
+
 ---
 
 ## Configuration
@@ -264,25 +279,61 @@ Variables importantes :
 
 ## API exposée
 
+Cette section liste les routes exposées par les trois modules. Pour les exemples de requêtes et les détails de payload, consulter les docs client liées.
+
 ### Projet 1 — RAG documentaire
 
-- `GET /rag/health`
-- `POST /rag/sources/upload`
-- `POST /rag/sources/{source_id}/index`
-- `POST /rag/search`
-- `POST /rag/chat`
-- `DELETE /rag/sources/{source_id}`
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| GET | `/rag/health` | Vérifier l'état du module RAG et de Qdrant |
+| POST | `/rag/sources/upload` | Importer un fichier RAG en synchrone |
+| POST | `/rag/sources/upload-async` | Importer un fichier RAG en asynchrone |
+| POST | `/rag/sources/url` | Créer une source URL sans ingestion immédiate |
+| POST | `/rag/sources/url/ingest` | Importer une URL RAG en synchrone |
+| POST | `/rag/sources/url/ingest-async` | Importer une URL RAG en asynchrone |
+| GET | `/rag/corpora` | Lister les corpus RAG d'un client |
+| GET | `/rag/corpora/{corpus_id}/sources` | Lister les sources d'un corpus |
+| GET | `/rag/sources` | Lister les sources RAG |
+| GET | `/rag/sources/{source_id}` | Récupérer une source RAG |
+| PATCH | `/rag/sources/{source_id}` | Renommer ou mettre à jour les métadonnées d'une source |
+| DELETE | `/rag/sources/{source_id}` | Supprimer une source et ses points Qdrant |
+| POST | `/rag/sources/{source_id}/index` | Indexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/index-async` | Indexer une source en asynchrone |
+| POST | `/rag/sources/{source_id}/reindex` | Réindexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/reindex-async` | Réindexer une source en asynchrone |
+| POST | `/rag/corpora/resync` | Resynchroniser un corpus en synchrone |
+| POST | `/rag/corpora/resync-async` | Resynchroniser un corpus en asynchrone |
+| GET | `/rag/jobs/{job_id}` | Suivre un job RAG asynchrone |
+| POST | `/rag/search` | Rechercher des passages documentaires |
+| POST | `/rag/conversations` | Créer une conversation RAG |
+| GET | `/rag/conversations` | Lister les conversations RAG |
+| GET | `/rag/conversations/{conversation_id}` | Récupérer une conversation RAG |
+| PATCH | `/rag/conversations/{conversation_id}` | Renommer une conversation RAG |
+| DELETE | `/rag/conversations/{conversation_id}` | Supprimer une conversation RAG |
+| GET | `/rag/conversations/{conversation_id}/messages` | Lister les messages d'une conversation |
+| POST | `/rag/chat` | Poser une question au chatbot RAG en JSON |
+| POST | `/rag/chat/stream` | Poser une question au chatbot RAG en streaming SSE |
+
+Documentation : [Documentation client — RAG documentaire](docs/client-technique-rag.md).
 
 ### Projet 2 — Chat IA
 
-- `POST /v1/chat`
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| POST | `/v1/chat` | Générer, reformuler, résumer ou corriger un texte via vLLM |
+
+Documentation : [Documentation client — Chat IA](docs/client-technique-chat.md).
 
 ### Projet 3 — Surveys
 
-- `POST /surveys/analyze`
-- `GET /surveys/processings/{processing_id}`
-- `POST /surveys/feedback`
-- `GET /surveys/feedback`
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| POST | `/surveys/analyze` | Lancer une analyse asynchrone de questionnaires |
+| GET | `/surveys/processings/{processing_id}` | Suivre un traitement et récupérer son résultat final |
+| POST | `/surveys/feedback` | Enregistrer un feedback opérateur |
+| GET | `/surveys/feedback` | Lister les exemples de feedback/mémoire d'un client |
+
+Documentation : [Documentation client — Surveys](docs/client-technique-surveys.md).
 
 ---
 
@@ -296,7 +347,10 @@ La stratégie actuelle est :
 - suppression physique des points Qdrant quand une source est supprimée ;
 - suppression des anciens points avant réindexation d’une source.
 
-Voir : [Documentation client — RAG documentaire](docs/client-technique-rag.md).
+Pour plus d'informations :
+
+- [Documentation client — RAG documentaire](docs/client-technique-rag.md)
+- [Architecture RAG détaillée](docs/rag_architecture.md)
 
 ---
 
@@ -304,7 +358,7 @@ Voir : [Documentation client — RAG documentaire](docs/client-technique-rag.md)
 
 Le Chat IA est une gateway vers vLLM exposée via `/v1/chat`.
 
-Voir : [Documentation client — Chat IA](docs/client-technique-chat.md).
+Pour plus d'informations : [Documentation client — Chat IA](docs/client-technique-chat.md).
 
 ---
 
@@ -312,7 +366,7 @@ Voir : [Documentation client — Chat IA](docs/client-technique-chat.md).
 
 Le module Surveys lance des traitements asynchrones et expose un workflow de feedback opérateur.
 
-Voir : [Documentation client — Surveys](docs/client-technique-surveys.md).
+Pour plus d'informations : [Documentation client — Surveys](docs/client-technique-surveys.md).
 
 ---
 
