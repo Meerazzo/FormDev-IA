@@ -48,10 +48,10 @@ Puis adapter les secrets et valeurs locales.
 bash scripts/formdevctl.sh config
 ```
 
-Cette commande écrit aussi la configuration résolue dans :
+Cette commande écrit aussi la configuration résolue dans un fichier temporaire unique :
 
 ```text
-/tmp/formdev-compose-check.yml
+/tmp/formdev-compose-check-XXXXXX.yml
 ```
 
 ### Lister les services
