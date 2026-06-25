@@ -1,104 +1,160 @@
 # Checklist de livraison finale — FormDev IA
 
-Ce document fige l'état initial du dépôt avant la passe de nettoyage/livraison.
-
-Date de création : 2026-06-25
-Branche de travail : `chore/day1-01-freeze-state`
+Date de création : 2026-06-25  
+Dernière mise à jour : 2026-06-25  
+Dépôt : `Meerazzo/FormDev-IA`
 
 ## Objectif de la passe finale
 
 Rendre le projet livrable, compréhensible et maintenable pour une intégration CRM/front, sans casser les fonctionnalités existantes.
 
-Priorité des modules :
+Modules prioritaires :
 
-1. Chatbot RAG documentaire (`/rag/*`)
+1. RAG documentaire (`/rag/*`)
 2. Configuration et Docker
-3. API Chat (`/v1/chat`)
-4. Analyse de questionnaires (`/surveys/*`)
+3. Chat IA (`/v1/chat`)
+4. Surveys (`/surveys/*`)
 5. Documentation développeur et documentation client technique
 6. Smoke tests et nettoyage final
 
-## État initial observé
+---
 
-### Dépôt principal
+## État final synthétique
 
-- Dépôt : `Meerazzo/FormDev-IA`
-- Branche source : `main`
-- Application principale : `apps/api/main.py`
-- Framework API : FastAPI
-- Services principaux : vLLM, PostgreSQL, Qdrant, Redis/RQ
+| Bloc | État | Validation |
+| --- | --- | --- |
+| Configuration env | Terminé | `infra/.env.example` aligné avec Docker Compose |
+| Docker Compose | Terminé | `docker compose config` validé |
+| Dockerfile API | Terminé | Build Docker API validé |
+| `.dockerignore` | Terminé | Exclusions de build ajoutées |
+| RAG lifecycle Qdrant | Terminé | Upload, index, search, reindex, delete validés |
+| README développeur | Terminé | README recentré sur Chat, Surveys et RAG |
+| Documentation technique | Terminé | Architecture, runbook et docs client ajoutés |
+| Surveys | Terminé | Analyze, processing, feedback et mémoire Qdrant validés |
+| Chat IA | Terminé | `/v1/chat` et `scripts/smoke_test.sh` validés |
+| Smoke global | Terminé | Health, Swagger, Chat, Surveys et RAG validés ensemble |
 
-### Modules API exposés
+---
 
-| Module | Router | Routes principales | État initial |
-| --- | --- | --- | --- |
-| Health | `apps/api/routers/health.py` | `GET /health` | Présent |
-| Chat | `apps/api/routers/chat_proxy.py` | `POST /v1/chat` | Présent, documenté dans Swagger |
-| Questionnaires | `apps/api/routers/surveys.py` | `POST /surveys/analyze`, `GET /surveys/processings/{processing_id}`, `POST /surveys/feedback` | Présent, async via Redis/RQ |
-| RAG documentaire | `apps/api/routers/rag.py` | `/rag/health`, `/rag/sources/*`, `/rag/corpora/*`, `/rag/conversations/*`, `/rag/chat`, `/rag/chat/stream`, `/rag/jobs/*` | Présent, prioritaire pour la livraison |
-
-## Points déjà validés par structure de code
-
-- API construite via factory `create_app()`.
-- Routers principaux enregistrés dans `main.py`.
-- Authentification par `X-API-Key`.
-- Rate limiting avec SlowAPI.
-- Logging centralisé avec request id.
-- Modèles Pydantic présents pour Chat, Surveys et RAG.
-- RAG structuré avec services d'ingestion, indexation, vector store, conversations et jobs.
-- Workers RQ présents pour Survey et RAG.
-- Docker Compose présent dans `infra/docker-compose.yml`.
-- Dockerfile API présent dans `apps/api/Dockerfile`.
-- README et runbook existants.
-
-## Problèmes identifiés à corriger
+## Problèmes initiaux traités
 
 ### P0 — bloquants livraison
 
-- [ ] `infra/.env.example` n'est pas aligné avec toutes les variables utilisées dans `infra/docker-compose.yml`.
-- [ ] Le README mentionne encore `/surveys/forms/analyze` alors que le code expose `POST /surveys/analyze`.
-- [ ] Le README doit présenter clairement les 3 modules : Chat, Surveys, RAG.
-- [ ] `scripts/smoke_test.sh` est référencé mais semble absent.
-- [ ] `.dockerignore` est absent.
-- [ ] `bench/results/` est ignoré dans `.gitignore` mais des résultats semblent déjà versionnés.
-- [ ] La documentation RAG mentionne un filtre `is_active=true` côté Qdrant, mais le vector store ne l'applique pas encore explicitement.
+- [x] `infra/.env.example` aligné avec les variables utilisées dans `infra/docker-compose.yml`.
+- [x] README corrigé : remplacement des anciennes références `/surveys/forms/analyze` par `/surveys/analyze`.
+- [x] README restructuré autour des 3 modules : Chat, Surveys, RAG.
+- [x] `scripts/smoke_test.sh` présent, sécurisé et étendu en smoke test global.
+- [x] `.dockerignore` ajouté.
+- [x] Documentation RAG corrigée : pas de filtre `is_active=true` annoncé pour les chunks RAG, car le vector store ne l'utilise pas.
+- [x] RAG réindexation corrigée : suppression des anciens points Qdrant avant upsert des nouveaux chunks.
 
 ### P1 — important
 
-- [ ] Docker Compose mélange dev, prod, vLLM, observabilité et services optionnels dans un seul fichier.
-- [ ] Graylog/OpenSearch/Mongo devraient être optionnels ou isolés.
-- [ ] Le Dockerfile installe Playwright/Patchright même lorsque le parser URL avancé n'est pas utilisé.
-- [ ] Les tags Swagger peuvent être harmonisés.
-- [ ] Les documentations client technique doivent être créées pour Chat, Surveys et RAG.
+- [x] Docker Compose rendu plus lisible avec profils et services mieux séparés.
+- [x] Graylog/OpenSearch/Mongo isolés via profil observabilité.
+- [x] Documentation client technique créée pour Chat, Surveys et RAG.
+- [x] README enrichi avec liens vers les fichiers de documentation.
+- [x] Runbook opérationnel mis à jour.
+- [x] Routes RAG complètes documentées dans README, runbook, architecture globale et doc client RAG.
 
-### P2 — amélioration si temps disponible
+### P2 — amélioration restante possible
 
-- [ ] Découper `routers/rag.py` en plusieurs sous-routers.
+- [ ] Découper `routers/rag.py` en sous-routers.
 - [ ] Ajouter une CI minimale.
 - [ ] Ajouter des tests pytest.
 - [ ] Ajouter une collection Postman/Bruno.
+- [ ] Aligner les versions `qdrant-client` et serveur Qdrant pour supprimer le warning de compatibilité mineure.
 
-## Branches prévues
+---
 
-| Bloc | Branche prévue | Objectif |
-| --- | --- | --- |
-| Gel état actuel | `chore/day1-01-freeze-state` | Ajouter la checklist de départ |
-| Configuration env | `chore/day1-02-env-example` | Corriger `infra/.env.example` |
-| Docker Compose | `chore/day1-03-docker-compose-cleanup` | Rendre le compose plus lisible et livrable |
-| Dockerfile + dockerignore | `chore/day1-04-dockerfile-dockerignore` | Nettoyer build Docker et exclusions |
+## Validations réalisées
 
-## Checklist de validation par module
+### Infrastructure
 
-Pour chaque module terminé :
+Commandes validées pendant la passe finale :
 
-- [ ] Branche dédiée créée.
-- [ ] Modifications limitées au périmètre du module.
-- [ ] Fichiers critiques relus.
-- [ ] Aucun secret ajouté.
-- [ ] Instructions de lancement cohérentes.
-- [ ] Résumé de validation fourni.
-- [ ] Liste du reste à faire mise à jour.
-- [ ] Fusion vers `main` uniquement après validation stable.
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yml config
+docker compose --env-file infra/.env -f infra/docker-compose.yml config --services
+docker compose --env-file infra/.env -f infra/docker-compose.yml --profile prod config --services
+docker compose --env-file infra/.env -f infra/docker-compose.yml --profile observability config --services
+docker build -f apps/api/Dockerfile -t formdev-api:test .
+python -m compileall apps/api
+```
+
+### RAG documentaire
+
+Scénarios validés :
+
+- [x] `GET /rag/health`
+- [x] `POST /rag/sources/upload`
+- [x] `POST /rag/sources/{source_id}/index`
+- [x] `POST /rag/search`
+- [x] `POST /rag/chat`
+- [x] `POST /rag/sources/{source_id}/reindex`
+- [x] suppression des anciens chunks lors de la réindexation
+- [x] `DELETE /rag/sources/{source_id}` avec suppression des points Qdrant
+
+Validation spécifique : reindexation d'une source de 30 chunks vers 1 chunk, puis vérification du compteur Qdrant.
+
+### Surveys
+
+Scénarios validés :
+
+- [x] `POST /surveys/analyze`
+- [x] retour `processing_id`
+- [x] `GET /surveys/processings/{processing_id}`
+- [x] statut final `FINISHED`
+- [x] segmentation en points
+- [x] sentiment détecté
+- [x] `categoryId` détecté
+- [x] génération de `response_id` et `point_id`
+- [x] `POST /surveys/feedback`
+- [x] `GET /surveys/feedback`
+- [x] stockage mémoire Qdrant Survey avec `is_active=true`
+- [x] worker `worker-survey-dev` : job terminé avec `Job OK`
+
+### Chat IA
+
+Scénarios validés :
+
+- [x] `POST /v1/chat`
+- [x] réponse courte contrôlée
+- [x] reformulation métier
+- [x] `finish_reason=stop`
+- [x] `usage` retourné
+- [x] `latency_ms` retourné
+- [x] `scripts/smoke_test.sh` exécuté avec `API_KEY` fourni par variable d'environnement
+
+### Smoke global final
+
+Smoke global manuel validé avec :
+
+- [x] `GET /health`
+- [x] Swagger accessible via `/docs`
+- [x] Chat : réponse `Chat OK`
+- [x] Surveys : analyse puis processing `FINISHED`
+- [x] RAG : upload TXT
+- [x] RAG : indexation dans `rag_chunks`
+- [x] RAG : recherche avec `results_count >= 1`
+- [x] RAG : chat avec sources et `used_chunks_count >= 1`
+- [x] RAG : suppression de la source et des points Qdrant
+- [x] `git status` propre après validation
+
+Le script `scripts/smoke_test.sh` couvre désormais ce smoke global.
+
+---
+
+## Documentation finale disponible
+
+- [Architecture globale](architecture.md)
+- [Runbook opérationnel](runbook.md)
+- [Documentation client — Chat IA](client-technique-chat.md)
+- [Documentation client — Surveys](client-technique-surveys.md)
+- [Documentation client — RAG documentaire](client-technique-rag.md)
+- [Architecture RAG détaillée](rag_architecture.md)
+
+---
 
 ## Définition de terminé pour la livraison finale
 
@@ -111,4 +167,5 @@ Le projet est considéré livrable quand un développeur externe peut :
 5. ouvrir Swagger ;
 6. tester les endpoints principaux ;
 7. comprendre les flux Chat, Surveys et RAG ;
-8. intégrer les endpoints côté CRM/front à partir des documents `docs/client-technique-*.md`.
+8. intégrer les endpoints côté CRM/front à partir des documents `docs/client-technique-*.md` ;
+9. exécuter `scripts/smoke_test.sh` pour valider les principaux modules.
