@@ -34,6 +34,7 @@ Modules prioritaires :
 | Chat IA | Terminé | `/v1/chat` et `scripts/smoke_test.sh` validés |
 | Swagger / OpenAPI | Terminé | `/docs` et `/openapi.json` validés, ReDoc désactivé volontairement |
 | Workers RQ | Terminé | Healthchecks Redis dédiés, workers RAG et Survey `healthy` |
+| Script d'exploitation | Terminé | `scripts/formdevctl.sh` ajouté pour centraliser les commandes courantes |
 | Smoke global | Terminé | Health, Swagger, Chat, Surveys et RAG validés ensemble |
 
 ---
@@ -69,7 +70,7 @@ Modules prioritaires :
 ### P1 bis — industrialisation / exploitation restante
 
 - [ ] Rendre Graylog pleinement exploitable avec vues erreurs, latences et appels par module.
-- [ ] Créer un script de gestion projet, par exemple `scripts/formdevctl.sh`.
+- [x] Créer un script de gestion projet : `scripts/formdevctl.sh`.
 - [ ] Créer une procédure ou un script de nettoyage des données dev.
 - [ ] Faire un test en conditions réelles léger : appels Chat, Surveys et RAG en parallèle.
 
@@ -167,6 +168,29 @@ Scénarios validés :
 - [x] Authentification `X-API-Key` visible dans Swagger
 - [x] Tags principaux lisibles : System, Chat, Surveys, RAG
 
+### Script d'exploitation `formdevctl.sh`
+
+Script ajouté : `scripts/formdevctl.sh`.
+
+Commandes couvertes :
+
+- [x] `config`
+- [x] `services`
+- [x] `ps` / `status`
+- [x] `up`
+- [x] `up-no-build`
+- [x] `down`
+- [x] `restart <service>`
+- [x] `restart-workers`
+- [x] `migrate`
+- [x] `smoke`
+- [x] `health`
+- [x] `logs*`
+- [x] `up-observability`
+- [x] `qdrant-collections`
+
+Documentation associée : `docs/formdevctl.md`.
+
 ### Smoke global final
 
 Smoke global manuel validé avec :
@@ -191,6 +215,7 @@ Le script `scripts/smoke_test.sh` couvre désormais ce smoke global.
 
 - [Architecture globale](architecture.md)
 - [Runbook opérationnel](runbook.md)
+- [Script d'exploitation formdevctl](formdevctl.md)
 - [Limitations connues](known_limitations.md)
 - [Documentation client — Chat IA](client-technique-chat.md)
 - [Documentation client — Surveys](client-technique-surveys.md)
@@ -212,4 +237,5 @@ Le projet est considéré livrable quand un développeur externe peut :
 7. comprendre les flux Chat, Surveys et RAG ;
 8. intégrer les endpoints côté CRM/front à partir des documents `docs/client-technique-*.md` ;
 9. exécuter `scripts/smoke_test.sh` pour valider les principaux modules ;
-10. consulter `docs/known_limitations.md` pour connaître les limites restantes avant une industrialisation complète.
+10. consulter `docs/known_limitations.md` pour connaître les limites restantes avant une industrialisation complète ;
+11. utiliser `scripts/formdevctl.sh` pour les commandes opérationnelles courantes.
