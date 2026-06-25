@@ -40,11 +40,11 @@ FastAPI
 
 ## Module Chat IA
 
-Route principale :
+Route exposée :
 
-```text
-POST /v1/chat
-```
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| POST | `/v1/chat` | Génération, reformulation, synthèse ou correction via vLLM |
 
 Usage :
 
@@ -56,16 +56,18 @@ Usage :
 
 Le module appelle vLLM via la gateway backend. L'authentification se fait par header `X-API-Key`.
 
+Documentation complémentaire : [Documentation client — Chat IA](client-technique-chat.md).
+
 ## Module Surveys
 
-Routes principales :
+Routes exposées :
 
-```text
-POST /surveys/analyze
-GET  /surveys/processings/{processing_id}
-POST /surveys/feedback
-GET  /surveys/feedback
-```
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| POST | `/surveys/analyze` | Lancer une analyse asynchrone de questionnaires |
+| GET | `/surveys/processings/{processing_id}` | Suivre un traitement et récupérer son résultat final |
+| POST | `/surveys/feedback` | Enregistrer un feedback opérateur sur les points analysés |
+| GET | `/surveys/feedback` | Lister les exemples de feedback/mémoire d'un client |
 
 Flux :
 
@@ -87,18 +89,42 @@ POST /surveys/feedback
 PostgreSQL + Qdrant mémorisent les corrections utiles
 ```
 
+Documentation complémentaire : [Documentation client — Surveys](client-technique-surveys.md).
+
 ## Module RAG documentaire
 
-Routes principales :
+Routes exposées :
 
-```text
-GET    /rag/health
-POST   /rag/sources/upload
-POST   /rag/sources/{source_id}/index
-POST   /rag/search
-POST   /rag/chat
-DELETE /rag/sources/{source_id}
-```
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| GET | `/rag/health` | Vérifier l'état du module RAG et de Qdrant |
+| POST | `/rag/sources/upload` | Importer un fichier RAG en synchrone |
+| POST | `/rag/sources/upload-async` | Importer un fichier RAG en asynchrone |
+| POST | `/rag/sources/url` | Créer une source URL sans ingestion immédiate |
+| POST | `/rag/sources/url/ingest` | Importer une URL RAG en synchrone |
+| POST | `/rag/sources/url/ingest-async` | Importer une URL RAG en asynchrone |
+| GET | `/rag/corpora` | Lister les corpus RAG d'un client |
+| GET | `/rag/corpora/{corpus_id}/sources` | Lister les sources d'un corpus |
+| GET | `/rag/sources` | Lister les sources RAG |
+| GET | `/rag/sources/{source_id}` | Récupérer une source RAG |
+| PATCH | `/rag/sources/{source_id}` | Renommer ou mettre à jour les métadonnées d'une source |
+| DELETE | `/rag/sources/{source_id}` | Supprimer une source et ses points Qdrant |
+| POST | `/rag/sources/{source_id}/index` | Indexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/index-async` | Indexer une source en asynchrone |
+| POST | `/rag/sources/{source_id}/reindex` | Réindexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/reindex-async` | Réindexer une source en asynchrone |
+| POST | `/rag/corpora/resync` | Resynchroniser un corpus en synchrone |
+| POST | `/rag/corpora/resync-async` | Resynchroniser un corpus en asynchrone |
+| GET | `/rag/jobs/{job_id}` | Suivre un job RAG asynchrone |
+| POST | `/rag/search` | Rechercher des passages documentaires |
+| POST | `/rag/conversations` | Créer une conversation RAG |
+| GET | `/rag/conversations` | Lister les conversations RAG |
+| GET | `/rag/conversations/{conversation_id}` | Récupérer une conversation RAG |
+| PATCH | `/rag/conversations/{conversation_id}` | Renommer une conversation RAG |
+| DELETE | `/rag/conversations/{conversation_id}` | Supprimer une conversation RAG |
+| GET | `/rag/conversations/{conversation_id}/messages` | Lister les messages d'une conversation |
+| POST | `/rag/chat` | Poser une question au chatbot RAG en JSON |
+| POST | `/rag/chat/stream` | Poser une question au chatbot RAG en streaming SSE |
 
 Flux :
 
@@ -119,6 +145,11 @@ vLLM
   ↓
 Réponse + sources
 ```
+
+Documentation complémentaire :
+
+- [Documentation client — RAG documentaire](client-technique-rag.md)
+- [Architecture RAG détaillée](rag_architecture.md)
 
 ## Isolation multi-client
 
