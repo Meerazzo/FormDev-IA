@@ -120,8 +120,10 @@ EOF
 }
 
 cmd_config() {
-  compose config >/tmp/formdev-compose-check.yml
-  echo "Compose config OK: /tmp/formdev-compose-check.yml"
+  local config_output
+  config_output="$(mktemp -t formdev-compose-check-XXXXXX.yml)"
+  compose config >"${config_output}"
+  echo "Compose config OK: ${config_output}"
 }
 
 cmd_services() {
