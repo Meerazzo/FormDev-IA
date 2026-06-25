@@ -23,7 +23,7 @@ MODEL_ID
 VLLM_BASE_URL
 ```
 
-Ne jamais commiter `infra/.env`.
+Ne jamais commiter `infra/.env` ni une vraie clé API dans la documentation.
 
 ## Lancer les services
 
@@ -53,22 +53,53 @@ Trouver le conteneur API :
 docker ps --format "table {{.Names}}\t{{.Ports}}" | grep api
 ```
 
-Puis :
+Puis, en adaptant le nom du conteneur si nécessaire :
 
 ```bash
 docker exec -it infra-api-dev-1 alembic upgrade head
 ```
 
-Adapter le nom du conteneur si nécessaire.
-
 ## Variables utiles pour les tests curl
 
-Adapter le port et la clé API selon `infra/.env`.
+Adapter `API` au port exposé par Docker Compose et `KEY` à une clé définie dans `infra/.env`.
 
 ```bash
-export API="http://localhost:8081"
-export KEY="FormdevINF26"
+export API="http://localhost:<API_PORT>"
+export KEY="<API_KEY>"
 ```
+
+## Routes RAG disponibles
+
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| GET | `/rag/health` | Healthcheck RAG |
+| POST | `/rag/sources/upload` | Upload fichier synchrone |
+| POST | `/rag/sources/upload-async` | Upload fichier asynchrone |
+| POST | `/rag/sources/url` | Création source URL |
+| POST | `/rag/sources/url/ingest` | Ingestion URL synchrone |
+| POST | `/rag/sources/url/ingest-async` | Ingestion URL asynchrone |
+| GET | `/rag/corpora` | Liste des corpus |
+| GET | `/rag/corpora/{corpus_id}/sources` | Sources d'un corpus |
+| GET | `/rag/sources` | Liste des sources |
+| GET | `/rag/sources/{source_id}` | Détail source |
+| PATCH | `/rag/sources/{source_id}` | Mise à jour source |
+| DELETE | `/rag/sources/{source_id}` | Suppression source + points Qdrant |
+| POST | `/rag/sources/{source_id}/index` | Indexation synchrone |
+| POST | `/rag/sources/{source_id}/index-async` | Indexation asynchrone |
+| POST | `/rag/sources/{source_id}/reindex` | Réindexation synchrone |
+| POST | `/rag/sources/{source_id}/reindex-async` | Réindexation asynchrone |
+| POST | `/rag/corpora/resync` | Resync corpus synchrone |
+| POST | `/rag/corpora/resync-async` | Resync corpus asynchrone |
+| GET | `/rag/jobs/{job_id}` | Suivi job RAG |
+| POST | `/rag/search` | Recherche vectorielle |
+| POST | `/rag/conversations` | Création conversation |
+| GET | `/rag/conversations` | Liste conversations |
+| GET | `/rag/conversations/{conversation_id}` | Détail conversation |
+| PATCH | `/rag/conversations/{conversation_id}` | Renommage conversation |
+| DELETE | `/rag/conversations/{conversation_id}` | Suppression conversation |
+| GET | `/rag/conversations/{conversation_id}/messages` | Messages conversation |
+| POST | `/rag/chat` | Chat RAG JSON |
+| POST | `/rag/chat/stream` | Chat RAG streaming SSE |
 
 ## Health API
 
@@ -255,25 +286,20 @@ curl -s -X DELETE "$API/rag/sources/$SOURCE_ID" \
 Trouver le port exposé :
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.yml port qdrant-dev 6333
-```
-
-Exemple :
-
-```text
-0.0.0.0:6335
+export QDRANT_PORT=$(docker compose --env-file infra/.env -f infra/docker-compose.yml port qdrant-dev 6333 | awk -F: '{print $NF}')
+echo "$QDRANT_PORT"
 ```
 
 Lister les collections :
 
 ```bash
-curl -s "http://localhost:6335/collections" | jq
+curl -s "http://localhost:$QDRANT_PORT/collections" | jq
 ```
 
 Compter les points RAG d'une source :
 
 ```bash
-curl -s -X POST "http://localhost:6335/collections/rag_chunks/points/count" \
+curl -s -X POST "http://localhost:$QDRANT_PORT/collections/rag_chunks/points/count" \
   -H "Content-Type: application/json" \
   -d "{
     \"exact\": true,
@@ -298,13 +324,19 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f api-dev
 Worker Survey :
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f survey-worker-dev
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f worker-survey-dev
 ```
 
 Worker RAG :
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f rag-worker-dev
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f worker-rag-dev
+```
+
+Redis dev :
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f redis-dev
 ```
 
 Qdrant :
@@ -379,8 +411,8 @@ Causes possibles :
 Vérifier Redis et le worker Survey :
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f redis
-docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f survey-worker-dev
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f redis-dev
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f worker-survey-dev
 ```
 
 ### RAG source indexée mais aucun résultat
