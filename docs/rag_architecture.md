@@ -6,24 +6,38 @@ Le module RAG expose un chatbot documentaire multi-client pour FormDev.
 
 Il permet à un CRM, un ERP ou un extranet client de poser des questions sur une base documentaire composée de fichiers PDF, DOCX, TXT ou d'URLs.
 
-## Routes principales
+## Routes exposées
 
-```text
-GET    /rag/health
-POST   /rag/sources/upload
-POST   /rag/sources/upload-async
-POST   /rag/sources/url
-POST   /rag/sources/url/ingest
-POST   /rag/sources/url/ingest-async
-GET    /rag/sources
-GET    /rag/sources/{source_id}
-PATCH  /rag/sources/{source_id}
-DELETE /rag/sources/{source_id}
-POST   /rag/sources/{source_id}/index
-POST   /rag/search
-POST   /rag/chat
-POST   /rag/chat/stream
-```
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| GET | `/rag/health` | Vérifier l'état du module RAG et de Qdrant |
+| POST | `/rag/sources/upload` | Importer un fichier RAG en synchrone |
+| POST | `/rag/sources/upload-async` | Importer un fichier RAG en asynchrone |
+| POST | `/rag/sources/url` | Créer une source URL sans ingestion immédiate |
+| POST | `/rag/sources/url/ingest` | Importer une URL RAG en synchrone |
+| POST | `/rag/sources/url/ingest-async` | Importer une URL RAG en asynchrone |
+| GET | `/rag/corpora` | Lister les corpus RAG d'un client |
+| GET | `/rag/corpora/{corpus_id}/sources` | Lister les sources d'un corpus |
+| GET | `/rag/sources` | Lister les sources RAG |
+| GET | `/rag/sources/{source_id}` | Récupérer une source RAG |
+| PATCH | `/rag/sources/{source_id}` | Renommer ou mettre à jour les métadonnées d'une source |
+| DELETE | `/rag/sources/{source_id}` | Supprimer une source et ses points Qdrant |
+| POST | `/rag/sources/{source_id}/index` | Indexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/index-async` | Indexer une source en asynchrone |
+| POST | `/rag/sources/{source_id}/reindex` | Réindexer une source en synchrone |
+| POST | `/rag/sources/{source_id}/reindex-async` | Réindexer une source en asynchrone |
+| POST | `/rag/corpora/resync` | Resynchroniser un corpus en synchrone |
+| POST | `/rag/corpora/resync-async` | Resynchroniser un corpus en asynchrone |
+| GET | `/rag/jobs/{job_id}` | Suivre un job RAG asynchrone |
+| POST | `/rag/search` | Rechercher des passages documentaires |
+| POST | `/rag/conversations` | Créer une conversation RAG |
+| GET | `/rag/conversations` | Lister les conversations RAG |
+| GET | `/rag/conversations/{conversation_id}` | Récupérer une conversation RAG |
+| PATCH | `/rag/conversations/{conversation_id}` | Renommer une conversation RAG |
+| DELETE | `/rag/conversations/{conversation_id}` | Supprimer une conversation RAG |
+| GET | `/rag/conversations/{conversation_id}/messages` | Lister les messages d'une conversation |
+| POST | `/rag/chat` | Poser une question au chatbot RAG en JSON |
+| POST | `/rag/chat/stream` | Poser une question au chatbot RAG en streaming SSE |
 
 ## Architecture
 
@@ -87,26 +101,24 @@ Cela évite qu'un client récupère des documents appartenant à un autre client
 
 ### Upload
 
-Route :
+Routes :
 
 ```text
 POST /rag/sources/upload
+POST /rag/sources/upload-async
+POST /rag/sources/url/ingest
+POST /rag/sources/url/ingest-async
 ```
 
-Le fichier est :
-
-1. sauvegardé ;
-2. parsé ;
-3. découpé en chunks ;
-4. enregistré comme source en base ;
-5. laissé en statut `pending` jusqu'à l'indexation.
+Une source importée est sauvegardée, parsée, découpée en chunks et enregistrée en base. Elle doit ensuite être indexée pour être utilisée par la recherche ou le chat.
 
 ### Indexation
 
-Route :
+Routes :
 
 ```text
 POST /rag/sources/{source_id}/index
+POST /rag/sources/{source_id}/index-async
 ```
 
 L'indexation :
@@ -118,6 +130,20 @@ L'indexation :
 5. met la source en statut `indexed`.
 
 Cette stratégie évite les chunks obsolètes lorsqu'une source est réindexée avec moins de chunks qu'avant.
+
+### Réindexation et resynchronisation
+
+Routes :
+
+```text
+POST /rag/sources/{source_id}/reindex
+POST /rag/sources/{source_id}/reindex-async
+POST /rag/corpora/resync
+POST /rag/corpora/resync-async
+GET  /rag/jobs/{job_id}
+```
+
+Les routes asynchrones créent un job RAG suivi via `/rag/jobs/{job_id}`.
 
 ### Suppression
 
@@ -131,6 +157,12 @@ La suppression :
 
 1. supprime physiquement les points Qdrant associés à la source ;
 2. marque la source en `deleted` en base PostgreSQL.
+
+## Chat et conversations
+
+Le chat RAG peut être utilisé directement via `/rag/chat` ou en streaming via `/rag/chat/stream`.
+
+Les conversations permettent de conserver l'historique côté backend : création, liste, consultation, renommage, suppression et lecture des messages.
 
 ## Note sur le versioning documentaire
 
