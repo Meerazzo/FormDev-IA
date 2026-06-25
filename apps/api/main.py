@@ -44,46 +44,16 @@ La route `GET /health` reste disponible pour les vérifications techniques simpl
 """
 
 OPENAPI_TAGS: list[dict[str, str]] = [
-    {
-        "name": "System",
-        "description": "Routes transverses de santé et de supervision de l'API.",
-    },
-    {
-        "name": "Chat",
-        "description": "Génération, reformulation et transformation de texte via le modèle LLM.",
-    },
-    {
-        "name": "Surveys",
-        "description": "Analyse de questionnaires, suivi de traitement et feedback opérateur.",
-    },
-    {
-        "name": "RAG - Health",
-        "description": "Diagnostic du module RAG, de Qdrant et des paramètres d'embedding.",
-    },
-    {
-        "name": "RAG - Sources",
-        "description": "Création, ingestion, indexation, réindexation et suppression de sources documentaires.",
-    },
-    {
-        "name": "RAG - Corpora",
-        "description": "Gestion des corpus documentaires par client.",
-    },
-    {
-        "name": "RAG - Search",
-        "description": "Recherche sémantique dans les chunks indexés.",
-    },
-    {
-        "name": "RAG - Chat",
-        "description": "Chat RAG synchrone ou streaming à partir des documents indexés.",
-    },
-    {
-        "name": "RAG - Conversations",
-        "description": "Création, consultation, modification et suppression des conversations RAG.",
-    },
-    {
-        "name": "RAG - Jobs",
-        "description": "Suivi des jobs asynchrones d'ingestion, d'indexation, de réindexation et de resynchronisation.",
-    },
+    {"name": "System", "description": "Routes transverses de santé et de supervision de l'API."},
+    {"name": "Chat", "description": "Génération, reformulation et transformation de texte via le modèle LLM."},
+    {"name": "Surveys", "description": "Analyse de questionnaires, suivi de traitement et feedback opérateur."},
+    {"name": "RAG - Health", "description": "Diagnostic du module RAG, de Qdrant et des paramètres d'embedding."},
+    {"name": "RAG - Sources", "description": "Création, ingestion, indexation, réindexation et suppression de sources documentaires."},
+    {"name": "RAG - Corpora", "description": "Gestion des corpus documentaires par client."},
+    {"name": "RAG - Search", "description": "Recherche sémantique dans les chunks indexés."},
+    {"name": "RAG - Chat", "description": "Chat RAG synchrone ou streaming à partir des documents indexés."},
+    {"name": "RAG - Conversations", "description": "Création, consultation, modification et suppression des conversations RAG."},
+    {"name": "RAG - Jobs", "description": "Suivi des jobs asynchrones d'ingestion, d'indexation, de réindexation et de resynchronisation."},
 ]
 
 DEFAULT_ERROR_RESPONSES: dict[str, dict[str, str]] = {
@@ -223,7 +193,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description=OPENAPI_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
-        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
+        redoc_url=None,
     )
 
     app.state.limiter = limiter
