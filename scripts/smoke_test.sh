@@ -2,7 +2,7 @@
 set -euo pipefail
 
 API_PORT="${API_PORT:-8080}"
-API_KEY="${API_KEY:-FormdevINF26}"
+: "${API_KEY:?Set API_KEY before running smoke_test.sh, for example: API_KEY=<key> API_PORT=8081 ./scripts/smoke_test.sh}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct-AWQ}"
 
 echo "[1/3] Health..."
