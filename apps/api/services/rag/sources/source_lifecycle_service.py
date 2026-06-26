@@ -51,7 +51,7 @@ class RagSourceLifecycleService:
                 extra={
                     "event_type": "rag_artifact_cleanup_failed",
                     "service_name": "formdev-api",
-                    "module": "rag",
+                    "app_module": "rag",
                     "route_family": "rag_sources",
                     "client_id": source.client_id,
                     "corpus_id": source.corpus_id,
@@ -77,7 +77,7 @@ class RagSourceLifecycleService:
             extra={
                 "event_type": "rag_source_deleted",
                 "service_name": "formdev-api",
-                "module": "rag",
+                "app_module": "rag",
                 "route_family": "rag_sources",
                 "client_id": source.client_id,
                 "corpus_id": source.corpus_id,
