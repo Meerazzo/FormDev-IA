@@ -38,14 +38,14 @@ def _ai_extra(
     latency_ms: float | None = None,
     error_type: str | None = None,
 ) -> dict[str, Any]:
-    module = "surveys" if feature.startswith("survey") else feature
+    app_module = "surveys" if feature.startswith("survey") else feature
     return {
         "event_type": "ai_interaction",
         "service_name": "formdev-api",
         "request_id": request_id or "-",
         "project": project,
         "client_id": client_id or "-",
-        "module": module,
+        "app_module": app_module,
         "feature": feature,
         "endpoint": endpoint,
         "status_code": status_code,
