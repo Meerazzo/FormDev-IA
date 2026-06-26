@@ -84,7 +84,16 @@ class RagLocalArtifactCleanup:
 
     def _chunks_path(self, source) -> Path | None:
         metadata = source.metadata_json or {}
-        return self._safe_path(metadata.get("chunks_path"))
+
+        chunks_path = self._safe_path(metadata.get("chunks_path"))
+        if chunks_path is not None:
+            return chunks_path
+
+        source_file = self._safe_path(source.source_uri)
+        if source_file is None:
+            return None
+
+        return self._safe_path(str(source_file.with_suffix(source_file.suffix + ".chunks.json")))
 
     def _safe_path(self, raw_path: str | None) -> Path | None:
         if not raw_path:
