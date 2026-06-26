@@ -1,6 +1,12 @@
 # Documentation client technique — RAG documentaire
 
-Cette page décrit le contrat d'intégration du module RAG pour un CRM ou un front documentaire.
+Cette page décrit à la fois le contrat d'intégration CRM/front et l'architecture technique du module RAG documentaire.
+
+## Objectif
+
+Le module RAG expose un chatbot documentaire multi-client pour FormDev.
+
+Il permet à un CRM, un ERP ou un extranet client de poser des questions sur une base documentaire composée de fichiers PDF, DOCX, TXT ou d'URLs.
 
 ## Authentification
 
@@ -33,6 +39,72 @@ corpus_id
 ```
 
 Un même client peut avoir plusieurs corpus, par exemple `default`, `formation_securite`, `catalogue_2026`.
+
+## Architecture technique
+
+```text
+Client / CRM / Extranet
+        ↓
+FastAPI /rag/*
+        ↓
+PostgreSQL : sources, corpus, conversations, jobs
+        ↓
+Parsing + chunking
+        ↓
+Embeddings locaux
+        ↓
+Qdrant : collection rag_chunks
+        ↓
+Recherche vectorielle filtrée
+        ↓
+Prompt RAG
+        ↓
+vLLM
+        ↓
+Réponse + sources
+```
+
+Rôles des composants :
+
+| Composant | Rôle |
+| --- | --- |
+| FastAPI | Expose les routes HTTP `/rag/*`, valide les payloads et applique l'authentification. |
+| PostgreSQL | Stocke les sources, corpus, jobs, conversations et messages. |
+| RQ / Redis | Exécute les ingestions, indexations, réindexations et resync longues en arrière-plan. |
+| Qdrant | Stocke les chunks vectorisés dans la collection documentaire. |
+| vLLM | Génère les réponses finales à partir du contexte documentaire récupéré. |
+
+## Collection Qdrant
+
+Collection utilisée :
+
+```text
+rag_chunks
+```
+
+Payload principal d'un point Qdrant :
+
+```json
+{
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "source_id": "src_123",
+  "source_type": "pdf",
+  "source_name": "guide.pdf",
+  "page": 4,
+  "chunk_index": 12,
+  "text": "...",
+  "metadata": {}
+}
+```
+
+Les recherches RAG filtrent toujours par :
+
+```text
+client_id + corpus_id
+```
+
+Cela évite qu'un client récupère des documents appartenant à un autre client ou à un autre corpus.
 
 ## Routes RAG exposées
 
@@ -127,7 +199,22 @@ Sortie :
 
 Le CRM doit conserver `source_id`, `client_id`, `corpus_id`, `source_name` et `status`.
 
-## Indexer une source
+## Cycle de vie d'une source
+
+### 1. Upload ou ingestion URL
+
+Routes principales :
+
+```text
+POST /rag/sources/upload
+POST /rag/sources/upload-async
+POST /rag/sources/url/ingest
+POST /rag/sources/url/ingest-async
+```
+
+Une source importée est sauvegardée, parsée, découpée en chunks et enregistrée en base. Elle doit ensuite être indexée pour être utilisée par la recherche ou le chat.
+
+### 2. Indexation
 
 ```bash
 export SOURCE_ID=$(jq -r '.source_id' /tmp/rag_upload_response.json)
@@ -148,6 +235,39 @@ Sortie :
   "chunks_indexed": 1
 }
 ```
+
+L'indexation :
+
+1. lit le fichier `.chunks.json` associé à la source ;
+2. calcule les embeddings ;
+3. supprime les anciens points Qdrant de cette source ;
+4. insère les nouveaux chunks dans Qdrant ;
+5. met la source en statut `indexed`.
+
+Cette stratégie évite les chunks obsolètes lorsqu'une source est réindexée avec moins de chunks qu'avant.
+
+### 3. Réindexation et resynchronisation
+
+Routes :
+
+```text
+POST /rag/sources/{source_id}/reindex
+POST /rag/sources/{source_id}/reindex-async
+POST /rag/corpora/resync
+POST /rag/corpora/resync-async
+GET  /rag/jobs/{job_id}
+```
+
+Les routes asynchrones créent un job RAG suivi via `/rag/jobs/{job_id}`.
+
+### 4. Suppression
+
+```bash
+curl -s -X DELETE "$API/rag/sources/$SOURCE_ID" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+La suppression marque la source en `deleted` côté PostgreSQL, supprime les points Qdrant associés et nettoie les artefacts locaux si présents.
 
 ## Recherche vectorielle
 
@@ -295,6 +415,14 @@ done
 error
 ```
 
+## Chat et conversations
+
+Le chat RAG peut être utilisé directement via `/rag/chat` ou en streaming via `/rag/chat/stream`.
+
+Les conversations permettent de conserver l'historique côté backend : création, liste, consultation, renommage, suppression et lecture des messages.
+
+Côté CRM, il faut stocker `conversation_id` si l'on veut reprendre la conversation lors des appels suivants.
+
 ## Jobs asynchrones
 
 Les routes asynchrones retournent un `job_id` et un `rq_job_id`.
@@ -328,18 +456,22 @@ succeeded
 failed
 ```
 
-## Supprimer une source
+## Note sur le versioning documentaire
 
-```bash
-curl -s -X DELETE "$API/rag/sources/$SOURCE_ID" \
-  -H "X-API-Key: $KEY" | jq
+Le RAG n'utilise pas de filtre d'activation logique côté Qdrant pour les chunks documentaires à ce stade.
+
+La stratégie retenue pour la livraison est volontairement simple :
+
+```text
+suppression physique des points Qdrant
 ```
 
-La suppression marque la source en `deleted` côté PostgreSQL, supprime les points Qdrant associés et nettoie les artefacts locaux si présents.
+Un mécanisme d'activation logique pourra être ajouté plus tard si FormDev souhaite gérer :
 
-## Réindexation
-
-Lorsqu'une source est indexée ou réindexée, l'API supprime les anciens points Qdrant de cette source avant d'insérer les nouveaux chunks. Cela évite de conserver des chunks obsolètes si le nouveau découpage contient moins de chunks que l'ancien.
+- versioning documentaire ;
+- rollback ;
+- historique de sources ;
+- désactivation temporaire sans suppression physique.
 
 ## Bonnes pratiques CRM
 
