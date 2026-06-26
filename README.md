@@ -16,6 +16,7 @@ Le projet fournit trois briques principales :
 | --- | --- | --- |
 | [Architecture globale](docs/architecture.md) | développeur / mainteneur | Vue d'ensemble des modules Chat, Surveys et RAG, composants et flux |
 | [Runbook opérationnel](docs/runbook.md) | exploitation | Lancement Docker, migrations, tests curl, logs et dépannage |
+| [Scripts du projet](docs/scripts.md) | développeur / exploitation | Rôle des scripts, commandes, smoke tests et changement de clé API |
 | [Documentation client — Chat IA](docs/client-technique-chat.md) | intégrateur CRM/front | Route `/v1/chat`, payload d'entrée, réponse, erreurs et bonnes pratiques |
 | [Documentation client — Surveys](docs/client-technique-surveys.md) | intégrateur CRM/front | Routes `/surveys/*`, format questionnaire, statuts, résultat enrichi et feedback opérateur |
 | [Documentation client — RAG documentaire](docs/client-technique-rag.md) | intégrateur CRM/front | Routes `/rag/*`, sources, indexation, search, chat, streaming, jobs et sorties attendues |
@@ -23,6 +24,7 @@ Le projet fournit trois briques principales :
 | [Nettoyage stockage RAG](docs/rag_storage_cleanup.md) | exploitation / mainteneur | Politique de suppression des artefacts locaux après indexation et suppression source |
 | [Nettoyage feedback Survey](docs/survey_feedback_cleanup.md) | exploitation / mainteneur | Politique de purge PostgreSQL après feedback opérateur |
 | [Observabilité Graylog](docs/graylog_observability.md) | exploitation | Activation Graylog, champs structurés, recherches et dashboards recommandés |
+| [Limites connues](docs/known_limitations.md) | développeur / exploitation | Limites techniques et points à surveiller |
 | [Checklist de livraison finale](docs/final_delivery_checklist.md) | pilotage | Suivi de la passe finale de nettoyage/livraison |
 
 ---
@@ -67,9 +69,13 @@ apps/api/
 │   └── session.py        # session DB
 ├── routers/              # couche HTTP FastAPI
 │   ├── health.py
-│   ├── chat/             # entrée projet Chat IA
-│   ├── survey/           # entrée projet Surveys
-│   └── rag/              # sous-routers RAG par responsabilité
+│   ├── chat/             # projet Chat IA
+│   │   ├── __init__.py
+│   │   └── routes.py     # /v1/chat
+│   ├── survey/           # projet Surveys
+│   │   ├── __init__.py
+│   │   └── routes.py     # /surveys/*
+│   └── rag/              # projet RAG documentaire
 ├── schemas/              # contrats Pydantic d'entrée/sortie
 ├── services/             # logique métier
 ├── workers/              # workers Redis/RQ
@@ -114,25 +120,63 @@ cp infra/.env.example infra/.env
 
 Adapter ensuite les secrets, ports et paramètres modèle dans `infra/.env`.
 
-### 2. Lancer les services
+### 2. Lancer les services dev
 
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d --build
 ```
 
-### 3. Appliquer les migrations
+### 3. Lancer dev + prod-like + observabilité
+
+```bash
+docker compose --profile prod --profile observability --env-file infra/.env -f infra/docker-compose.yml up -d --build
+```
+
+### 4. Appliquer les migrations
 
 ```bash
 docker exec -it infra-api-dev-1 alembic upgrade head
+docker exec -it infra-api-prod-1 alembic upgrade head
 ```
 
-### 4. Accéder à Swagger
+### 5. Accéder à Swagger
 
 ```text
-http://localhost:<API_PORT>/docs
+Dev  : http://localhost:<API_DEV_PORT>/docs
+Prod : http://localhost:<API_PROD_PORT>/docs
 ```
 
 Le port dépend de `API_DEV_PORT` ou `API_PROD_PORT` dans `infra/.env`.
+
+---
+
+## Utiliser Swagger avec l'API key
+
+Toutes les routes métier utilisent le header :
+
+```text
+X-API-Key: <clé_api>
+```
+
+Si `API_KEYS` est au format :
+
+```text
+client_demo:ma-cle-secrete
+```
+
+alors dans Swagger il faut cliquer sur **Authorize** et coller uniquement :
+
+```text
+ma-cle-secrete
+```
+
+Ne pas coller `client_demo:ma-cle-secrete` et ne pas préfixer par `Bearer`.
+
+Après modification de `API_KEYS` dans `infra/.env`, recréer les conteneurs API/workers :
+
+```bash
+docker compose --profile prod --profile observability --env-file infra/.env -f infra/docker-compose.yml up -d --force-recreate api-dev api-prod worker-survey-dev worker-rag-dev worker-survey-prod worker-rag-prod
+```
 
 ---
 
@@ -191,6 +235,17 @@ Variables importantes :
 - `GRAYLOG_HOST`
 - `GRAYLOG_PORT`
 - `GRAYLOG_FACILITY`
+
+---
+
+## Scripts utiles
+
+| Script | Usage rapide | Documentation |
+| --- | --- | --- |
+| `scripts/smoke_test.sh` | Test global Chat + Surveys + RAG en dev ou prod-like | [docs/scripts.md](docs/scripts.md) |
+| `scripts/formdevctl.sh` | Helper d'exploitation pour Docker Compose, logs, smoke, migrations | [docs/scripts.md](docs/scripts.md) |
+| `scripts/enable_graylog_dev.sh` | Active Graylog dans `infra/.env` | [docs/scripts.md](docs/scripts.md) |
+| `scripts/enable_survey_purge_after_feedback.sh` | Active la purge Survey après feedback opérateur | [docs/scripts.md](docs/scripts.md) |
 
 ---
 
