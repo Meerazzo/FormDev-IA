@@ -19,7 +19,7 @@ from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.storage.local_artifact_cleanup import RagLocalArtifactCleanup
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 
-logger = logging.getLogger("formdev_ia_api")
+logger = logging.getLogger(__name__)
 
 
 class RagIndexingService:
@@ -81,44 +81,15 @@ class RagIndexingService:
             self.db.commit()
             self.db.refresh(source)
 
-            cleanup_report = {}
             try:
-                cleanup_report = self.artifact_cleanup.after_index_success(source)
+                self.artifact_cleanup.after_index_success(source)
             except Exception as cleanup_error:
                 logger.warning(
-                    "RAG artifact cleanup failed after index",
-                    extra={
-                        "event_type": "rag_artifact_cleanup_failed",
-                        "service_name": "formdev-api",
-                        "module": "rag",
-                        "route_family": "rag_sources",
-                        "client_id": source.client_id,
-                        "corpus_id": source.corpus_id,
-                        "source_id": source.source_id,
-                        "source_type": source.source_type,
-                        "error_type": cleanup_error.__class__.__name__,
-                        "error_message": str(cleanup_error),
-                    },
+                    "RAG artifact cleanup failed after index "
+                    "(source_id=%s): %s",
+                    source.source_id,
+                    str(cleanup_error),
                 )
-
-            logger.info(
-                "rag source indexed",
-                extra={
-                    "event_type": "rag_source_indexed",
-                    "service_name": "formdev-api",
-                    "module": "rag",
-                    "route_family": "rag_sources",
-                    "client_id": source.client_id,
-                    "corpus_id": source.corpus_id,
-                    "source_id": source.source_id,
-                    "source_type": source.source_type,
-                    "chunks_count": len(chunks),
-                    "chunks_indexed": indexed_count,
-                    "qdrant_collection": settings.RAG_QDRANT_COLLECTION,
-                    "local_artifacts_deleted_count": len(cleanup_report.get("deleted_paths", [])) if cleanup_report else 0,
-                    "local_artifacts_cleanup_policy": cleanup_report.get("policy", "unknown") if cleanup_report else "unknown",
-                },
-            )
 
             return RagIndexSourceResponse(
                 source_id=source.source_id,
@@ -133,21 +104,6 @@ class RagIndexingService:
             source.status = "error"
             source.error_message = str(exc)
             self.db.commit()
-            logger.error(
-                "rag source index failed",
-                extra={
-                    "event_type": "rag_source_index_failed",
-                    "service_name": "formdev-api",
-                    "module": "rag",
-                    "route_family": "rag_sources",
-                    "client_id": source.client_id,
-                    "corpus_id": source.corpus_id,
-                    "source_id": source.source_id,
-                    "source_type": source.source_type,
-                    "error_type": exc.__class__.__name__,
-                    "error_message": str(exc),
-                },
-            )
             raise
 
     def reindex_source(self, source_id: str) -> RagReindexSourceResponse:
@@ -246,21 +202,6 @@ class RagIndexingService:
         indexed_sources = sum(1 for result in results if result.success)
         failed_sources = sum(1 for result in results if not result.success)
 
-        logger.info(
-            "rag corpus resynced",
-            extra={
-                "event_type": "rag_corpus_resynced",
-                "service_name": "formdev-api",
-                "module": "rag",
-                "route_family": "rag_corpora",
-                "client_id": client_id,
-                "corpus_id": corpus_id,
-                "total_sources": len(results),
-                "indexed_sources": indexed_sources,
-                "failed_sources": failed_sources,
-            },
-        )
-
         return RagCorpusResyncResponse(
             client_id=client_id,
             corpus_id=corpus_id,
@@ -287,22 +228,6 @@ class RagIndexingService:
             corpus_id=corpus_id,
             top_k=top_k,
             score_threshold=score_threshold,
-        )
-
-        logger.info(
-            "rag search completed",
-            extra={
-                "event_type": "rag_search_completed",
-                "service_name": "formdev-api",
-                "module": "rag",
-                "route_family": "rag_search",
-                "client_id": client_id,
-                "corpus_id": corpus_id,
-                "top_k": top_k,
-                "score_threshold": score_threshold,
-                "results_count": len(results),
-                "top_score": results[0].get("score") if results else None,
-            },
         )
 
         return RagSearchResponse(
