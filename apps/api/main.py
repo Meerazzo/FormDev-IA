@@ -28,8 +28,8 @@ from core.logging import (
 )
 from core.rate_limit import limiter
 from routers.health import router as health_router
-from routers.chat_proxy import router as chat_router
-from routers.surveys import router as surveys_router
+from routers.chat import router as chat_router
+from routers.survey import router as surveys_router
 from routers.rag import router as rag_router
 
 OPENAPI_DESCRIPTION = """
