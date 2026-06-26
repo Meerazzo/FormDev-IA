@@ -19,13 +19,9 @@ Le projet fournit trois briques principales :
 | [Scripts du projet](docs/scripts.md) | développeur / exploitation | Rôle des scripts, commandes, smoke tests et changement de clé API |
 | [Documentation client — Chat IA](docs/client-technique-chat.md) | intégrateur CRM/front | Route `/v1/chat`, payload d'entrée, réponse, erreurs et bonnes pratiques |
 | [Documentation client — Surveys](docs/client-technique-surveys.md) | intégrateur CRM/front | Routes `/surveys/*`, format questionnaire, statuts, résultat enrichi et feedback opérateur |
-| [Documentation client — RAG documentaire](docs/client-technique-rag.md) | intégrateur CRM/front | Routes `/rag/*`, sources, indexation, search, chat, streaming, jobs et sorties attendues |
-| [Architecture RAG détaillée](docs/rag_architecture.md) | développeur RAG | Cycle de vie des sources RAG, Qdrant, réindexation et conversations |
-| [Nettoyage stockage RAG](docs/rag_storage_cleanup.md) | exploitation / mainteneur | Politique de suppression des artefacts locaux après indexation et suppression source |
-| [Nettoyage feedback Survey](docs/survey_feedback_cleanup.md) | exploitation / mainteneur | Politique de purge PostgreSQL après feedback opérateur |
+| [Documentation client — RAG documentaire](docs/client-technique-rag.md) | intégrateur CRM/front / développeur RAG | Routes `/rag/*`, architecture RAG, sources, indexation, search, chat, streaming, jobs et sorties attendues |
 | [Observabilité Graylog](docs/graylog_observability.md) | exploitation | Activation Graylog, champs structurés, recherches et dashboards recommandés |
 | [Limites connues](docs/known_limitations.md) | développeur / exploitation | Limites techniques et points à surveiller |
-| [Checklist de livraison finale](docs/final_delivery_checklist.md) | pilotage | Suivi de la passe finale de nettoyage/livraison |
 
 ---
 
