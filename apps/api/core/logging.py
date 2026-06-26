@@ -32,6 +32,74 @@ LOG_LEVEL = settings.LOG_LEVEL.upper()
 logger = logging.getLogger("formdev_ia_api")
 
 
+def _module_from_path(path: str) -> str:
+    if path.startswith("/v1/chat"):
+        return "chat"
+    if path.startswith("/surveys"):
+        return "surveys"
+    if path.startswith("/rag"):
+        return "rag"
+    return "system"
+
+
+def _route_family(path: str) -> str:
+    if path.startswith("/v1/chat"):
+        return "chat_gateway"
+    if path.startswith("/surveys/feedback"):
+        return "surveys_feedback"
+    if path.startswith("/surveys/processings"):
+        return "surveys_processing"
+    if path.startswith("/surveys/analyze"):
+        return "surveys_analyze"
+    if path.startswith("/rag/sources"):
+        return "rag_sources"
+    if path.startswith("/rag/corpora"):
+        return "rag_corpora"
+    if path.startswith("/rag/search"):
+        return "rag_search"
+    if path.startswith("/rag/chat"):
+        return "rag_chat"
+    if path.startswith("/rag/jobs"):
+        return "rag_jobs"
+    if path.startswith("/rag/health"):
+        return "rag_health"
+    return "system"
+
+
+def _status_family(status_code) -> str:
+    try:
+        status = int(status_code)
+    except Exception:
+        return "unknown"
+    return f"{status // 100}xx"
+
+
+def _latency_bucket(duration_ms: float) -> str:
+    if duration_ms < 100:
+        return "lt_100ms"
+    if duration_ms < 500:
+        return "100_500ms"
+    if duration_ms < 1000:
+        return "500ms_1s"
+    if duration_ms < 3000:
+        return "1_3s"
+    if duration_ms < 10000:
+        return "3_10s"
+    return "gt_10s"
+
+
+def _level_for_status(status_code) -> int:
+    try:
+        status = int(status_code)
+    except Exception:
+        return logging.INFO
+    if status >= 500:
+        return logging.ERROR
+    if status >= 400:
+        return logging.WARNING
+    return logging.INFO
+
+
 def setup_logging() -> None:
     """
     Initialise la configuration globale des logs.
@@ -68,6 +136,8 @@ def setup_logging() -> None:
             root_logger.info(
                 "Greylog logging enabled",
                 extra={
+                    "event_type": "observability_startup",
+                    "service_name": "formdev-api",
                     "app_env": settings.APP_ENV,
                     "graylog_host": settings.GRAYLOG_HOST,
                     "graylog_port": settings.GRAYLOG_PORT,
@@ -83,14 +153,6 @@ def setup_logging() -> None:
 
 
 def _get_remote_ip(request: Request) -> str:
-    """
-    Récupère l'IP appelante.
-
-    Priorité :
-    - X-Forwarded-For si l'API est derrière un proxy
-    - X-Real-IP
-    - IP socket directe
-    """
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
@@ -113,13 +175,22 @@ def _get_user_agent(request: Request) -> str:
 async def unhandled_exception_handler(request: Request, exc: Exception):
     req_id = getattr(request.state, "request_id", "-")
 
+    path = request.url.path
     logger.exception(
         "unhandled exception",
         extra={
+            "event_type": "http_exception",
+            "service_name": "formdev-api",
             "app_env": settings.APP_ENV,
             "request_id": req_id,
+            "module": _module_from_path(path),
+            "route_family": _route_family(path),
             "method": request.method,
-            "path": request.url.path,
+            "path": path,
+            "status_code": 500,
+            "status_family": "5xx",
+            "is_error": True,
+            "error_type": exc.__class__.__name__,
             "remote_ip": _get_remote_ip(request),
             "user_agent": _get_user_agent(request),
         },
@@ -134,14 +205,21 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     req_id = getattr(request.state, "request_id", "-")
 
+    path = request.url.path
     logger.warning(
         "rate limit exceeded",
         extra={
+            "event_type": "rate_limit",
+            "service_name": "formdev-api",
             "app_env": settings.APP_ENV,
             "request_id": req_id,
+            "module": _module_from_path(path),
+            "route_family": _route_family(path),
             "method": request.method,
-            "path": request.url.path,
+            "path": path,
             "status_code": 429,
+            "status_family": "4xx",
+            "is_error": True,
             "remote_ip": _get_remote_ip(request),
             "user_agent": _get_user_agent(request),
         },
@@ -175,17 +253,27 @@ def add_request_id_middleware(app: FastAPI) -> None:
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
             status_code = getattr(response, "status_code", "-") if response else "-"
+            path = request.url.path
+            family = _status_family(status_code)
 
-            logger.info(
+            logger.log(
+                _level_for_status(status_code),
                 "request completed",
                 extra={
+                    "event_type": "http_request",
+                    "service_name": "formdev-api",
                     "app_env": settings.APP_ENV,
                     "request_id": request.state.request_id,
                     "client_id": client_id or "-",
+                    "module": _module_from_path(path),
+                    "route_family": _route_family(path),
                     "method": request.method,
-                    "path": request.url.path,
+                    "path": path,
                     "status_code": status_code,
+                    "status_family": family,
+                    "is_error": family in {"4xx", "5xx"},
                     "duration_ms": round(duration_ms, 1),
+                    "latency_bucket": _latency_bucket(duration_ms),
                     "remote_ip": _get_remote_ip(request),
                     "user_agent": _get_user_agent(request),
                 },
