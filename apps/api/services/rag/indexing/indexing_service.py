@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,10 @@ from schemas.rag import (
 )
 from services.rag.embeddings.local_embedding_service import get_local_embedding_service
 from services.rag.sources.source_repository import RagSourceRepository
+from services.rag.storage.local_artifact_cleanup import RagLocalArtifactCleanup
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class RagIndexingService:
@@ -32,6 +36,7 @@ class RagIndexingService:
         self.source_repository = RagSourceRepository(db)
         self.embedding_service = get_local_embedding_service()
         self.vector_store = RagVectorStore()
+        self.artifact_cleanup = RagLocalArtifactCleanup(db)
 
     def index_source(self, source_id: str) -> RagIndexSourceResponse:
         source = self.source_repository.get_by_source_id(source_id)
@@ -75,6 +80,16 @@ class RagIndexingService:
             source.error_message = None
             self.db.commit()
             self.db.refresh(source)
+
+            try:
+                self.artifact_cleanup.after_index_success(source)
+            except Exception as cleanup_error:
+                logger.warning(
+                    "RAG artifact cleanup failed after index "
+                    "(source_id=%s): %s",
+                    source.source_id,
+                    str(cleanup_error),
+                )
 
             return RagIndexSourceResponse(
                 source_id=source.source_id,
