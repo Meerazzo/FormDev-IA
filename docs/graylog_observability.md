@@ -44,7 +44,7 @@ service_name=formdev-api
 app_env=dev|prod
 request_id=<uuid>
 client_id=<client ou ->
-module=chat|surveys|rag|system
+app_module=chat|surveys|rag|system
 route_family=chat_gateway|surveys_analyze|surveys_processing|surveys_feedback|rag_sources|rag_search|rag_chat|rag_corpora|rag_jobs|rag_health|system
 method=GET|POST|PATCH|DELETE
 path=/...
@@ -59,7 +59,7 @@ Logs IA :
 
 ```text
 event_type=ai_interaction
-module=chat|surveys
+app_module=chat|surveys
 feature=chat|survey_analysis...
 endpoint=/v1/chat|/surveys/analyze...
 pipeline_name=<pipeline>
@@ -105,19 +105,19 @@ service_name:formdev-api AND duration_ms:>3000
 Module Chat :
 
 ```text
-service_name:formdev-api AND module:chat
+service_name:formdev-api AND app_module:chat
 ```
 
 Module Surveys :
 
 ```text
-service_name:formdev-api AND module:surveys
+service_name:formdev-api AND app_module:surveys
 ```
 
 Module RAG :
 
 ```text
-service_name:formdev-api AND module:rag
+service_name:formdev-api AND app_module:rag
 ```
 
 Indexations RAG :
@@ -149,17 +149,17 @@ event_type:ai_interaction AND finish_reason:length
 Vue `FormDev - Overview` :
 
 ```text
-- count par module
+- count par app_module
 - count par status_family
 - moyenne duration_ms par route_family
 - top routes lentes
-- count is_error:true par module
+- count is_error:true par app_module
 ```
 
 Vue `FormDev - AI Usage` :
 
 ```text
-- count event_type=ai_interaction par module
+- count event_type=ai_interaction par app_module
 - somme total_tokens par client_id
 - moyenne latency_ms par pipeline_name
 - count par finish_reason
@@ -183,7 +183,7 @@ Vue `FormDev - Surveys` :
 - count /surveys/analyze
 - count /surveys/processings par status_family
 - count /surveys/feedback
-- count ai_interaction où module:surveys
+- count ai_interaction où app_module:surveys
 - somme total_tokens sur Surveys
 ```
 
@@ -206,4 +206,4 @@ Puis chercher dans Graylog :
 service_name:formdev-api
 ```
 
-On doit voir des logs `http_request` avec `module=system` puis `module=rag`.
+On doit voir des logs `http_request` avec `app_module=system` puis `app_module=rag`.
