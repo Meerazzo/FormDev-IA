@@ -7,7 +7,7 @@ from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.storage.local_artifact_cleanup import RagLocalArtifactCleanup
 from services.rag.vectorstore.rag_vector_store import RagVectorStore
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("formdev_ia_api")
 
 
 class RagSourceLifecycleService:
@@ -42,14 +42,24 @@ class RagSourceLifecycleService:
                 message="Source déjà supprimée",
             )
 
+        cleanup_report = {}
         try:
-            self.artifact_cleanup.on_source_delete(source)
+            cleanup_report = self.artifact_cleanup.on_source_delete(source)
         except Exception as cleanup_error:
             logger.warning(
-                "RAG artifact cleanup failed during source delete "
-                "(source_id=%s): %s",
-                source.source_id,
-                str(cleanup_error),
+                "RAG artifact cleanup failed during source delete",
+                extra={
+                    "event_type": "rag_artifact_cleanup_failed",
+                    "service_name": "formdev-api",
+                    "app_module": "rag",
+                    "route_family": "rag_sources",
+                    "client_id": source.client_id,
+                    "corpus_id": source.corpus_id,
+                    "source_id": source.source_id,
+                    "source_type": source.source_type,
+                    "error_type": cleanup_error.__class__.__name__,
+                    "error_message": str(cleanup_error),
+                },
             )
 
         self.vector_store.delete_source(
@@ -61,6 +71,23 @@ class RagSourceLifecycleService:
         self.source_repository.mark_deleted(source_id)
 
         self.db.refresh(source)
+
+        logger.info(
+            "rag source deleted",
+            extra={
+                "event_type": "rag_source_deleted",
+                "service_name": "formdev-api",
+                "app_module": "rag",
+                "route_family": "rag_sources",
+                "client_id": source.client_id,
+                "corpus_id": source.corpus_id,
+                "source_id": source.source_id,
+                "source_type": source.source_type,
+                "qdrant_points_deleted": True,
+                "local_artifacts_deleted_count": len(cleanup_report.get("deleted_paths", [])) if cleanup_report else 0,
+                "local_artifacts_cleanup_policy": cleanup_report.get("policy", "unknown") if cleanup_report else "unknown",
+            },
+        )
 
         return RagDeleteSourceResponse(
             source_id=source.source_id,

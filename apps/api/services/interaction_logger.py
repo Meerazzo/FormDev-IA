@@ -17,6 +17,55 @@ def _safe_commit(session) -> None:
         raise
 
 
+def _ai_extra(
+    *,
+    request_id: str | None,
+    project: str,
+    client_id: str | None,
+    endpoint: str,
+    feature: str,
+    status_code: int,
+    pipeline_name: str | None,
+    pipeline_version: str | None,
+    prompt_version: str | None,
+    source_ref: str | None,
+    model_requested: str | None = None,
+    model_used: str | None = None,
+    finish_reason: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    latency_ms: float | None = None,
+    error_type: str | None = None,
+) -> dict[str, Any]:
+    app_module = "surveys" if feature.startswith("survey") else feature
+    return {
+        "event_type": "ai_interaction",
+        "service_name": "formdev-api",
+        "request_id": request_id or "-",
+        "project": project,
+        "client_id": client_id or "-",
+        "app_module": app_module,
+        "feature": feature,
+        "endpoint": endpoint,
+        "status_code": status_code,
+        "status_family": f"{status_code // 100}xx",
+        "is_error": status_code >= 400,
+        "pipeline_name": pipeline_name or "-",
+        "pipeline_version": pipeline_version or "-",
+        "prompt_version": prompt_version or "-",
+        "source_ref": source_ref or "-",
+        "model_requested": model_requested or "-",
+        "model_used": model_used or "-",
+        "finish_reason": finish_reason or "-",
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "latency_ms": latency_ms,
+        "error_type": error_type or "-",
+    }
+
+
 def log_ai_interaction_success(
     *,
     request_id: str | None,
@@ -72,6 +121,28 @@ def log_ai_interaction_success(
         )
         session.add(row)
         _safe_commit(session)
+        logger.info(
+            "ai interaction completed",
+            extra=_ai_extra(
+                request_id=request_id,
+                project=project,
+                client_id=client_id,
+                endpoint=endpoint,
+                feature=feature,
+                model_requested=model_requested,
+                model_used=model_used,
+                finish_reason=finish_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                pipeline_name=pipeline_name,
+                pipeline_version=pipeline_version,
+                prompt_version=prompt_version,
+                source_ref=source_ref,
+            ),
+        )
     except Exception:
         logger.exception(
             "interaction_log_error type=error  request_id=%s endpoint=%s",
@@ -125,6 +196,24 @@ def log_ai_interaction_error(
         )
         session.add(row)
         _safe_commit(session)
+        logger.error(
+            "ai interaction failed",
+            extra=_ai_extra(
+                request_id=request_id,
+                project=project,
+                client_id=client_id,
+                endpoint=endpoint,
+                feature=feature,
+                model_requested=model_requested,
+                model_used=None,
+                status_code=status_code,
+                pipeline_name=pipeline_name,
+                pipeline_version=pipeline_version,
+                prompt_version=prompt_version,
+                source_ref=source_ref,
+                error_type=error_type,
+            ),
+        )
     except Exception as e:
         logger.exception(
             "interaction_log_error type=error  request_id=%s endpoint=%s error=%s",
