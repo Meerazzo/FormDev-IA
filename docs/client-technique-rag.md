@@ -1,5 +1,7 @@
 # Documentation client technique — RAG documentaire
 
+Cette page décrit le contrat d'intégration du module RAG pour un CRM ou un front documentaire.
+
 ## Authentification
 
 Toutes les routes RAG sont protégées par clé API :
@@ -9,6 +11,28 @@ X-API-Key: <API_KEY>
 ```
 
 Ne pas documenter de vraie clé API dans le dépôt. Les exemples utilisent la variable d'environnement locale `KEY`.
+
+## Principe d'intégration côté CRM
+
+Cycle recommandé :
+
+```text
+1. Créer ou importer une source documentaire
+2. Indexer la source, ou utiliser une route asynchrone qui délègue au worker
+3. Stocker source_id, corpus_id et status côté CRM
+4. Utiliser /rag/search pour afficher des extraits documentaires
+5. Utiliser /rag/chat pour obtenir une réponse sourcée
+6. Supprimer une source lorsqu'elle ne doit plus être utilisée
+```
+
+Les données sont isolées par :
+
+```text
+client_id
+corpus_id
+```
+
+Un même client peut avoir plusieurs corpus, par exemple `default`, `formation_securite`, `catalogue_2026`.
 
 ## Routes RAG exposées
 
@@ -45,8 +69,6 @@ Ne pas documenter de vraie clé API dans le dépôt. Les exemples utilisent la v
 
 ## Variables de test locales
 
-Adapter `API` au port exposé par Docker Compose et `KEY` à la clé définie dans `infra/.env`.
-
 ```bash
 export API="http://localhost:<API_PORT>"
 export KEY="<API_KEY>"
@@ -54,14 +76,15 @@ export CLIENT="client_demo"
 export CORPUS="default"
 ```
 
-## Health
-
-```bash
-curl -s "$API/rag/health" \
-  -H "X-API-Key: $KEY" | jq
-```
-
 ## Upload source synchrone
+
+Entrée : `multipart/form-data`.
+
+| Paramètre | Emplacement | Type | Obligatoire | Rôle |
+| --- | --- | --- | --- | --- |
+| `client_id` | query | string | oui | Client propriétaire de la source. |
+| `corpus_id` | query | string | non | Corpus cible. Défaut : `default`. |
+| `file` | form-data | file | oui | Fichier TXT, PDF ou DOCX. |
 
 ```bash
 cat > /tmp/rag_test_source.txt <<'TXT'
@@ -75,6 +98,35 @@ curl -s -X POST "$API/rag/sources/upload?client_id=$CLIENT&corpus_id=$CORPUS" \
   | tee /tmp/rag_upload_response.json | jq
 ```
 
+Sortie :
+
+```json
+{
+  "source_id": "src_...",
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "source_type": "txt",
+  "source_name": "rag_test_source.txt",
+  "status": "pending",
+  "file_path": "/data/rag/.../rag_test_source.txt",
+  "chunks_path": "/data/rag/.../rag_test_source.txt.chunks.json",
+  "chunks_count": 1,
+  "preview_chunks": [
+    {
+      "page": null,
+      "chunk_index": 0,
+      "text": "FormDev IA propose un chatbot documentaire RAG..."
+    }
+  ],
+  "parser_metadata": {
+    "parser": "txt",
+    "encoding": "utf-8"
+  }
+}
+```
+
+Le CRM doit conserver `source_id`, `client_id`, `corpus_id`, `source_name` et `status`.
+
 ## Indexer une source
 
 ```bash
@@ -84,7 +136,40 @@ curl -s -X POST "$API/rag/sources/$SOURCE_ID/index" \
   -H "X-API-Key: $KEY" | jq
 ```
 
+Sortie :
+
+```json
+{
+  "source_id": "src_...",
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "status": "indexed",
+  "qdrant_collection": "rag_chunks",
+  "chunks_indexed": 1
+}
+```
+
 ## Recherche vectorielle
+
+Entrée JSON :
+
+```json
+{
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "query": "Où sont stockés les chunks vectorisés ?",
+  "top_k": 3,
+  "score_threshold": 0.0
+}
+```
+
+| Champ | Type | Obligatoire | Rôle |
+| --- | --- | --- | --- |
+| `client_id` | string | oui | Client propriétaire du corpus. |
+| `corpus_id` | string | oui | Corpus à interroger. |
+| `query` | string | oui | Question ou recherche utilisateur. |
+| `top_k` | integer | non | Nombre maximum de chunks à retourner. |
+| `score_threshold` | number/null | non | Score minimal de similarité. |
 
 ```bash
 curl -s -X POST "$API/rag/search" \
@@ -99,7 +184,45 @@ curl -s -X POST "$API/rag/search" \
   }" | jq
 ```
 
+Sortie :
+
+```json
+{
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "query": "Où sont stockés les chunks vectorisés ?",
+  "results_count": 1,
+  "results": [
+    {
+      "score": 0.42,
+      "source_id": "src_...",
+      "source_type": "txt",
+      "source_name": "rag_test_source.txt",
+      "page": null,
+      "chunk_index": 0,
+      "text": "Qdrant stocke les chunks vectorisés.",
+      "metadata": {}
+    }
+  ]
+}
+```
+
 ## Chat RAG JSON
+
+Entrée JSON :
+
+```json
+{
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "conversation_id": null,
+  "question": "Explique le rôle de Qdrant dans ce projet.",
+  "top_k": 3,
+  "score_threshold": null,
+  "temperature": 0.2,
+  "max_tokens": 512
+}
+```
 
 ```bash
 curl -s -X POST "$API/rag/chat" \
@@ -113,6 +236,35 @@ curl -s -X POST "$API/rag/chat" \
     \"temperature\": 0.2,
     \"max_tokens\": 512
   }" | jq
+```
+
+Sortie :
+
+```json
+{
+  "conversation_id": "rag_conv_...",
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "question": "Explique le rôle de Qdrant dans ce projet.",
+  "answer": "Qdrant stocke les chunks documentaires vectorisés...",
+  "sources": [
+    {
+      "source_id": "src_...",
+      "source_type": "txt",
+      "source_name": "rag_test_source.txt",
+      "page": null,
+      "chunk_index": 0,
+      "score": 0.68,
+      "text": "Qdrant stocke les chunks vectorisés."
+    }
+  ],
+  "used_chunks_count": 1,
+  "retrieval_confidence": "high",
+  "top_score": 0.68,
+  "retrieval_candidates_count": 1,
+  "filtered_chunks_count": 1,
+  "metadata": {}
+}
 ```
 
 ## Chat RAG streaming SSE
@@ -133,7 +285,7 @@ curl -N -X POST "$API/rag/chat/stream" \
   }"
 ```
 
-Événements attendus :
+Événements possibles :
 
 ```text
 metadata
@@ -146,6 +298,19 @@ error
 ## Jobs asynchrones
 
 Les routes asynchrones retournent un `job_id` et un `rq_job_id`.
+
+```json
+{
+  "job_id": "rag_job_...",
+  "rq_job_id": "...",
+  "client_id": "client_demo",
+  "corpus_id": "default",
+  "source_id": "src_...",
+  "job_type": "ingest",
+  "status": "pending",
+  "message": "Job d'ingestion RAG ajouté à la queue"
+}
+```
 
 Suivre un job :
 
@@ -170,69 +335,18 @@ curl -s -X DELETE "$API/rag/sources/$SOURCE_ID" \
   -H "X-API-Key: $KEY" | jq
 ```
 
-La suppression marque la source en `deleted` côté PostgreSQL et supprime les points Qdrant associés.
+La suppression marque la source en `deleted` côté PostgreSQL, supprime les points Qdrant associés et nettoie les artefacts locaux si présents.
 
 ## Réindexation
 
 Lorsqu'une source est indexée ou réindexée, l'API supprime les anciens points Qdrant de cette source avant d'insérer les nouveaux chunks. Cela évite de conserver des chunks obsolètes si le nouveau découpage contient moins de chunks que l'ancien.
 
-## Isolation documentaire
+## Bonnes pratiques CRM
 
-Chaque requête RAG doit fournir :
-
-```text
-client_id
-corpus_id
-```
-
-Les recherches vectorielles sont filtrées sur ces deux champs pour éviter les mélanges entre clients ou corpus.
-
-## Vérifier Qdrant
-
-Trouver le port exposé :
-
-```bash
-export QDRANT_PORT=$(docker compose --env-file infra/.env -f infra/docker-compose.yml port qdrant-dev 6333 | awk -F: '{print $NF}')
-echo "$QDRANT_PORT"
-```
-
-Lister les collections :
-
-```bash
-curl -s "http://localhost:$QDRANT_PORT/collections" | jq
-```
-
-Compter les points d'une source :
-
-```bash
-curl -s -X POST "http://localhost:$QDRANT_PORT/collections/rag_chunks/points/count" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"exact\": true,
-    \"filter\": {
-      \"must\": [
-        {\"key\": \"client_id\", \"match\": {\"value\": \"$CLIENT\"}},
-        {\"key\": \"corpus_id\", \"match\": {\"value\": \"$CORPUS\"}},
-        {\"key\": \"source_id\", \"match\": {\"value\": \"$SOURCE_ID\"}}
-      ]
-    }
-  }" | jq
-```
-
-## Erreurs fréquentes
-
-| Code | Cause probable |
-| --- | --- |
-| 401 | Clé API absente ou invalide |
-| 400 | Source introuvable, chunks absents ou requête invalide |
-| 404 | Source, conversation ou job introuvable |
-| 429 | Rate limit atteint |
-| 500 | Erreur d'indexation, Qdrant ou stockage |
-
-## Bonnes pratiques d'intégration
-
-- Toujours conserver le `source_id` retourné après upload.
-- Toujours utiliser le même `client_id` et `corpus_id` entre upload, index, search et chat.
-- Indexer une source avant de l'utiliser en recherche ou en chat.
-- Préférer les routes asynchrones pour les fichiers volumineux ou les corpus importants.
-- Supprimer les sources de test pour éviter d'accumuler des points Qdrant inutiles.
+- Toujours envoyer `client_id` et `corpus_id`.
+- Stocker `source_id` après upload ou ingestion URL.
+- Afficher `status` côté CRM pour que l'utilisateur voie si la source est `pending`, `indexed`, `error` ou `deleted`.
+- Préférer les routes asynchrones pour les fichiers/URLs volumineux.
+- Utiliser `/rag/search` pour du debug ou de l'affichage d'extraits.
+- Utiliser `/rag/chat` pour une réponse finale prête à afficher.
+- Stocker `conversation_id` si le CRM veut garder un historique conversationnel.
