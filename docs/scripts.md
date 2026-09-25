@@ -31,7 +31,7 @@ Il vérifie notamment :
 - upload RAG ;
 - indexation RAG ;
 - recherche RAG ;
-- chat RAG.
+- chat RAG avec `user_id`.
 
 ### Utilisation dev
 
@@ -46,6 +46,7 @@ API_KEY="$KEY" \
 API_PORT="$API_DEV_PORT" \
 CLIENT_ID="smoke-dev-client" \
 RAG_CORPUS_ID="smoke-dev-corpus" \
+RAG_USER_ID="smoke-dev-user" \
 bash scripts/smoke_test.sh
 ```
 
@@ -62,6 +63,7 @@ API_KEY="$KEY" \
 API_PORT="$API_PROD_PORT" \
 CLIENT_ID="smoke-prod-client" \
 RAG_CORPUS_ID="smoke-prod-corpus" \
+RAG_USER_ID="smoke-prod-user" \
 bash scripts/smoke_test.sh
 ```
 

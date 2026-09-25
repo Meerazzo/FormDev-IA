@@ -105,6 +105,7 @@ Routes exposées :
 | POST | `/rag/sources/url/ingest-async` | Importer une URL RAG en asynchrone |
 | GET | `/rag/corpora` | Lister les corpus RAG d'un client |
 | GET | `/rag/corpora/{corpus_id}/sources` | Lister les sources d'un corpus |
+| DELETE | `/rag/corpora/{corpus_id}` | Désactiver un corpus et nettoyer ses données associées |
 | GET | `/rag/sources` | Lister les sources RAG |
 | GET | `/rag/sources/{source_id}` | Récupérer une source RAG |
 | PATCH | `/rag/sources/{source_id}` | Renommer ou mettre à jour les métadonnées d'une source |
@@ -149,11 +150,10 @@ Réponse + sources
 Documentation complémentaire :
 
 - [Documentation client — RAG documentaire](client-technique-rag.md)
-- [Architecture RAG détaillée](rag_architecture.md)
 
 ## Isolation multi-client
 
-L'isolation repose sur les champs métier suivants :
+L'isolation documentaire repose sur les champs métier suivants :
 
 ```text
 client_id
@@ -163,6 +163,8 @@ source_id
 
 Pour le RAG, les recherches Qdrant sont filtrées par `client_id` et `corpus_id`.
 
+Les conversations ajoutent `user_id` et sont accessibles uniquement dans le scope `client_id + corpus_id + user_id`. Le backend conserve les 6 derniers messages de chaque conversation comme fenêtre de contexte récente.
+
 Pour Surveys, les exemples validés sont rattachés au client concerné.
 
 ## Cycle de vie Qdrant RAG
@@ -171,6 +173,7 @@ La stratégie actuelle est volontairement simple :
 
 ```text
 Suppression source     → suppression physique des points Qdrant associés
+Suppression corpus     → nettoyage des sources + suppression des points Qdrant du corpus + désactivation PostgreSQL
 Réindexation source    → suppression des anciens points, puis upsert des nouveaux chunks
 Recherche RAG          → filtre client_id + corpus_id
 ```

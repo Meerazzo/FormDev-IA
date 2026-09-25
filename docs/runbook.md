@@ -80,6 +80,7 @@ export KEY="<API_KEY>"
 | POST | `/rag/sources/url/ingest-async` | Ingestion URL asynchrone |
 | GET | `/rag/corpora` | Liste des corpus |
 | GET | `/rag/corpora/{corpus_id}/sources` | Sources d'un corpus |
+| DELETE | `/rag/corpora/{corpus_id}` | Suppression corpus + sources + Qdrant + conversations |
 | GET | `/rag/sources` | Liste des sources |
 | GET | `/rag/sources/{source_id}` | Détail source |
 | PATCH | `/rag/sources/{source_id}` | Mise à jour source |
@@ -223,6 +224,7 @@ Variables :
 ```bash
 export CLIENT="client_demo"
 export CORPUS="default"
+export USER="user_123"
 ```
 
 Upload :
@@ -267,6 +269,7 @@ curl -s -X POST "$API/rag/chat" \
   -d "{
     \"client_id\": \"$CLIENT\",
     \"corpus_id\": \"$CORPUS\",
+    \"user_id\": \"$USER\",
     \"question\": \"Explique le rôle de Qdrant dans ce projet.\",
     \"top_k\": 3,
     \"temperature\": 0.2,

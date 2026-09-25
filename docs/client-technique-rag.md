@@ -31,12 +31,22 @@ Cycle recommandé :
 6. Supprimer une source lorsqu'elle ne doit plus être utilisée
 ```
 
-Les données sont isolées par :
+Les documents et les recherches vectorielles sont isolés par :
 
 ```text
 client_id
 corpus_id
 ```
+
+Les conversations et le chat ajoutent un niveau d'isolation utilisateur :
+
+```text
+client_id
+corpus_id
+user_id
+```
+
+`user_id` doit être un identifiant utilisateur stable fourni par le CRM/front. Une conversation créée pour un utilisateur ne peut pas être consultée, renommée, supprimée ou réutilisée par un autre utilisateur.
 
 Un même client peut avoir plusieurs corpus, par exemple `default`, `formation_securite`, `catalogue_2026`.
 
@@ -118,6 +128,7 @@ Cela évite qu'un client récupère des documents appartenant à un autre client
 | POST | `/rag/sources/url/ingest-async` | Importer une URL RAG en asynchrone |
 | GET | `/rag/corpora` | Lister les corpus RAG d'un client |
 | GET | `/rag/corpora/{corpus_id}/sources` | Lister les sources d'un corpus |
+| DELETE | `/rag/corpora/{corpus_id}` | Désactiver un corpus et nettoyer ses sources, points Qdrant et conversations |
 | GET | `/rag/sources` | Lister les sources RAG |
 | GET | `/rag/sources/{source_id}` | Récupérer une source RAG |
 | PATCH | `/rag/sources/{source_id}` | Renommer ou mettre à jour les métadonnées d'une source |
@@ -146,6 +157,7 @@ export API="http://localhost:<API_PORT>"
 export KEY="<API_KEY>"
 export CLIENT="client_demo"
 export CORPUS="default"
+export USER="user_123"
 ```
 
 ## Upload source synchrone
@@ -269,6 +281,23 @@ curl -s -X DELETE "$API/rag/sources/$SOURCE_ID" \
 
 La suppression marque la source en `deleted` côté PostgreSQL, supprime les points Qdrant associés et nettoie les artefacts locaux si présents.
 
+### 5. Suppression d'un corpus
+
+```bash
+curl -s -X DELETE "$API/rag/corpora/$CORPUS?client_id=$CLIENT" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+La suppression d'un corpus :
+
+1. vérifie que le corpus appartient au client ;
+2. nettoie chacune de ses sources et leurs artefacts locaux ;
+3. supprime les points Qdrant des sources puis effectue un nettoyage final des points du corpus ;
+4. supprime les conversations et messages associés ;
+5. désactive le corpus en PostgreSQL avec `is_active=false`.
+
+Un corpus désactivé peut être réactivé si le même `corpus_id` est recréé ultérieurement. Éviter de supprimer un corpus lorsqu'un job d'indexation ou de resynchronisation de ce corpus est encore en cours.
+
 ## Recherche vectorielle
 
 Entrée JSON :
@@ -335,6 +364,7 @@ Entrée JSON :
 {
   "client_id": "client_demo",
   "corpus_id": "default",
+  "user_id": "user_123",
   "conversation_id": null,
   "question": "Explique le rôle de Qdrant dans ce projet.",
   "top_k": 3,
@@ -351,6 +381,7 @@ curl -s -X POST "$API/rag/chat" \
   -d "{
     \"client_id\": \"$CLIENT\",
     \"corpus_id\": \"$CORPUS\",
+    \"user_id\": \"$USER\",
     \"question\": \"Explique le rôle de Qdrant dans ce projet.\",
     \"top_k\": 3,
     \"temperature\": 0.2,
@@ -365,6 +396,7 @@ Sortie :
   "conversation_id": "rag_conv_...",
   "client_id": "client_demo",
   "corpus_id": "default",
+  "user_id": "user_123",
   "question": "Explique le rôle de Qdrant dans ce projet.",
   "answer": "Qdrant stocke les chunks documentaires vectorisés...",
   "sources": [
@@ -398,6 +430,7 @@ curl -N -X POST "$API/rag/chat/stream" \
   -d "{
     \"client_id\": \"$CLIENT\",
     \"corpus_id\": \"$CORPUS\",
+    \"user_id\": \"$USER\",
     \"question\": \"Explique le rôle de Qdrant dans ce projet.\",
     \"top_k\": 3,
     \"temperature\": 0.2,
@@ -419,9 +452,15 @@ error
 
 Le chat RAG peut être utilisé directement via `/rag/chat` ou en streaming via `/rag/chat/stream`.
 
-Les conversations permettent de conserver l'historique côté backend : création, liste, consultation, renommage, suppression et lecture des messages.
+Les conversations permettent de gérer l'historique côté backend : création, liste, consultation, renommage, suppression et lecture des messages.
 
-Côté CRM, il faut stocker `conversation_id` si l'on veut reprendre la conversation lors des appels suivants.
+Toutes les opérations sur une conversation sont limitées au triplet `client_id + corpus_id + user_id`. Le même `conversation_id` présenté avec un autre `user_id` est traité comme une conversation introuvable.
+
+Le backend conserve uniquement les **6 derniers messages RAG** de chaque conversation. Avant une nouvelle question, ces messages constituent la fenêtre de contexte récente ; après une réponse assistant réussie, les messages plus anciens sont supprimés.
+
+Si le CRM/front doit afficher un historique complet au-delà de ces 6 messages, il doit le conserver côté application.
+
+Côté CRM, il faut donc stocker `conversation_id` et conserver un `user_id` stable pour reprendre une conversation.
 
 ## Jobs asynchrones
 
@@ -476,9 +515,11 @@ Un mécanisme d'activation logique pourra être ajouté plus tard si FormDev sou
 ## Bonnes pratiques CRM
 
 - Toujours envoyer `client_id` et `corpus_id`.
+- Pour le chat et les conversations, toujours envoyer un `user_id` stable.
 - Stocker `source_id` après upload ou ingestion URL.
 - Afficher `status` côté CRM pour que l'utilisateur voie si la source est `pending`, `indexed`, `error` ou `deleted`.
 - Préférer les routes asynchrones pour les fichiers/URLs volumineux.
 - Utiliser `/rag/search` pour du debug ou de l'affichage d'extraits.
 - Utiliser `/rag/chat` pour une réponse finale prête à afficher.
-- Stocker `conversation_id` si le CRM veut garder un historique conversationnel.
+- Stocker `conversation_id` pour reprendre une conversation existante.
+- Ne pas dépendre du backend pour afficher un historique complet : seuls les 6 derniers messages RAG y sont conservés.

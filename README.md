@@ -4,7 +4,7 @@ API d'inférence, d'analyse de questionnaires et de chatbot documentaire pour Fo
 
 Le projet fournit trois briques principales :
 
-- **Projet 1 — RAG documentaire** : chatbot documentaire multi-client (`/rag/*`) avec ingestion de sources, indexation Qdrant, recherche vectorielle et réponses sourcées.
+- **Projet 1 — RAG documentaire** : chatbot documentaire multi-client (`/rag/*`) avec ingestion de sources, indexation Qdrant, recherche vectorielle, conversations isolées par utilisateur et réponses sourcées.
 - **Projet 2 — Chat IA** : route de génération / transformation de texte (`/v1/chat`) via vLLM.
 - **Projet 3 — Surveys** : pipeline d'analyse de questionnaires de satisfaction (`/surveys/*`) avec traitement asynchrone, segmentation, classification, feedback opérateur et mémoire vectorielle par client.
 
@@ -97,7 +97,7 @@ apps/api/routers/rag/
 ├── common.py             # helpers partagés RAG
 ├── health.py             # /rag/health
 ├── sources.py            # sources, upload, URL, index/reindex, delete
-├── corpora.py            # corpus et resync
+├── corpora.py            # corpus, resync et suppression
 ├── search.py             # /rag/search
 ├── conversations.py      # conversations et messages
 ├── chat.py               # /rag/chat et /rag/chat/stream
@@ -276,7 +276,8 @@ Tables principales :
 - `point_feedback`
 - `survey_processing_jobs`
 - `ai_interactions`
-- tables RAG de sources, corpus, conversations et jobs
+- tables RAG de sources, corpus, conversations et jobs ;
+- conversations RAG isolées par `client_id + corpus_id + user_id`, avec conservation backend des 6 derniers messages.
 
 ### Qdrant
 
