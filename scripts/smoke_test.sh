@@ -6,6 +6,7 @@ API_URL="${API_URL:-http://localhost:${API_PORT}}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct-AWQ}"
 CLIENT_ID="${CLIENT_ID:-smoke-client}"
 RAG_CORPUS_ID="${RAG_CORPUS_ID:-smoke-corpus}"
+RAG_USER_ID="${RAG_USER_ID:-smoke-user}"
 
 : "${API_KEY:?Set API_KEY before running smoke_test.sh}"
 
@@ -89,7 +90,21 @@ echo "${SEARCH_JSON}" | jq
 echo "${SEARCH_JSON}" | jq -e '.results_count >= 1' >/dev/null
 
 echo "[9/9] RAG chat"
-RAG_CHAT_PAYLOAD=$(jq -n --arg client "${CLIENT_ID}" --arg corpus "${RAG_CORPUS_ID}" '{client_id:$client,corpus_id:$corpus,question:"Quels sont les trois modules principaux de FormDev IA ?",top_k:3,temperature:0.2,max_tokens:256}')
+RAG_CHAT_PAYLOAD=$(
+  jq -n \
+    --arg client "${CLIENT_ID}" \
+    --arg corpus "${RAG_CORPUS_ID}" \
+    --arg user "${RAG_USER_ID}" \
+    '{
+      client_id: $client,
+      corpus_id: $corpus,
+      user_id: $user,
+      question: "Quels sont les trois modules principaux de FormDev IA ?",
+      top_k: 3,
+      temperature: 0.2,
+      max_tokens: 256
+    }'
+)
 RAG_CHAT_JSON=$(curl -fsS -X POST "${API_URL}/rag/chat" -H "${AUTH_HEADER}" -H "${JSON_HEADER}" -d "${RAG_CHAT_PAYLOAD}")
 echo "${RAG_CHAT_JSON}" | jq
 echo "${RAG_CHAT_JSON}" | jq -e '.answer | length > 0' >/dev/null

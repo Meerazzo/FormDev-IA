@@ -10,6 +10,13 @@ class RagConversation(Base):
         Index("idx_rag_conversations_conversation_id", "conversation_id"),
         Index("idx_rag_conversations_client_id", "client_id"),
         Index("idx_rag_conversations_corpus_id", "corpus_id"),
+        Index("idx_rag_conversations_user_id", "user_id"),
+        Index(
+            "idx_rag_conversations_scope",
+            "client_id",
+            "corpus_id",
+            "user_id",
+        ),
         Index("idx_rag_conversations_created_at", "created_at"),
     )
 
@@ -18,6 +25,7 @@ class RagConversation(Base):
     conversation_id = Column(Text, nullable=False, unique=True)
     client_id = Column(Text, nullable=False)
     corpus_id = Column(Text, nullable=False, default="default")
+    user_id = Column(Text, nullable=True)
 
     title = Column(Text, nullable=True)
 

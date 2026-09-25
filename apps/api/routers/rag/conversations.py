@@ -34,6 +34,7 @@ async def create_rag_conversation(
     conversation = repository.create_conversation(
         client_id=payload.client_id,
         corpus_id=payload.corpus_id,
+        user_id=payload.user_id,
         title=payload.title,
     )
     return repository.to_conversation_response(conversation)
@@ -45,6 +46,7 @@ async def list_rag_conversations(
     request: Request,
     client_id: str = Query(...),
     corpus_id: str | None = Query(default=None),
+    user_id: str = Query(..., min_length=1, max_length=255),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -55,12 +57,14 @@ async def list_rag_conversations(
     conversations = repository.list_conversations(
         client_id=client_id,
         corpus_id=corpus_id,
+        user_id=user_id,
         limit=limit,
         offset=offset,
     )
     return RagConversationListResponse(
         client_id=client_id,
         corpus_id=corpus_id,
+        user_id=user_id,
         conversations_count=len(conversations),
         conversations=[repository.to_conversation_response(item) for item in conversations],
     )
@@ -72,6 +76,7 @@ async def get_rag_conversation(
     request: Request,
     conversation_id: str,
     client_id: str = Query(...),
+    user_id: str = Query(..., min_length=1, max_length=255),
     corpus_id: str = Query(default="default"),
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
@@ -81,6 +86,7 @@ async def get_rag_conversation(
     conversation = repository.get_for_client(
         conversation_id=conversation_id,
         client_id=client_id,
+        user_id=user_id,
         corpus_id=corpus_id,
     )
     if conversation is None:
@@ -102,6 +108,7 @@ async def update_rag_conversation(
     conversation = repository.update_title(
         conversation_id=conversation_id,
         client_id=payload.client_id,
+        user_id=payload.user_id,
         corpus_id=payload.corpus_id,
         title=payload.title,
     )
@@ -116,6 +123,7 @@ async def delete_rag_conversation(
     request: Request,
     conversation_id: str,
     client_id: str = Query(...),
+    user_id: str = Query(..., min_length=1, max_length=255),
     corpus_id: str = Query(default="default"),
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
@@ -125,6 +133,7 @@ async def delete_rag_conversation(
         conversation_id=conversation_id,
         client_id=client_id,
         corpus_id=corpus_id,
+        user_id=user_id,
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
@@ -132,6 +141,7 @@ async def delete_rag_conversation(
         conversation_id=conversation_id,
         client_id=client_id,
         corpus_id=corpus_id,
+        user_id=user_id,
         deleted=True,
         message="Conversation RAG supprimée",
     )
@@ -143,6 +153,7 @@ async def list_rag_conversation_messages(
     request: Request,
     conversation_id: str,
     client_id: str = Query(...),
+    user_id: str = Query(..., min_length=1, max_length=255),
     corpus_id: str = Query(default="default"),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -155,6 +166,7 @@ async def list_rag_conversation_messages(
         conversation_id=conversation_id,
         client_id=client_id,
         corpus_id=corpus_id,
+        user_id=user_id,
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation RAG introuvable")

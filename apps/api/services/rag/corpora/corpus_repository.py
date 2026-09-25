@@ -42,6 +42,18 @@ class RagCorpusRepository:
         )
 
         if corpus is not None:
+            if not corpus.is_active:
+                corpus.is_active = True
+
+                if name is not None:
+                    corpus.name = name
+
+                if description is not None:
+                    corpus.description = description
+
+                self.db.commit()
+                self.db.refresh(corpus)
+
             return corpus
 
         corpus = RagCorpus(
@@ -142,3 +154,25 @@ class RagCorpusRepository:
             RagCorpusResponse(**payload)
             for _, payload in sorted(corpus_map.items(), key=sort_key)
         ]
+
+    def deactivate(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+    ) -> RagCorpus | None:
+
+        corpus = self.get_for_client(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+        if corpus is None:
+            return None
+
+        if corpus.is_active:
+            corpus.is_active = False
+            self.db.commit()
+            self.db.refresh(corpus)
+
+        return corpus

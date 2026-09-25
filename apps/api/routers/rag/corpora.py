@@ -1,6 +1,14 @@
 """Routes de gestion des corpus RAG."""
 
-from fastapi import APIRouter, Body, Depends, Query, Request, Security
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Security,
+)
 from sqlalchemy.orm import Session
 
 from core.rate_limit import limiter
@@ -12,6 +20,7 @@ from schemas.rag import (
     RagCorpusResyncRequest,
     RagCorpusResyncResponse,
     RagSourceResponse,
+    RagCorpusDeleteResponse,
 )
 from services.rag.corpora.corpus_repository import RagCorpusRepository
 from services.rag.indexing.indexing_service import RagIndexingService
@@ -19,7 +28,10 @@ from services.rag.jobs.job_repository import RagJobRepository
 from services.rag.queue.rag_queue import enqueue_rag_resync_job
 from services.rag.sources.source_repository import RagSourceRepository
 from services.rag.sources.source_service import RagSourceService
-
+from services.rag.corpora.corpus_lifecycle_service import (
+    RagCorpusLifecycleService,
+    RagCorpusNotFoundError,
+)
 from .common import RATE_LIMIT_RPM, api_key_header
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -65,6 +77,44 @@ async def list_rag_corpus_sources(
         include_deleted=include_deleted,
     )
 
+@router.delete(
+    "/corpora/{corpus_id}",
+    response_model=RagCorpusDeleteResponse,
+    summary="Supprimer un corpus RAG",
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def delete_rag_corpus(
+    request: Request,
+    corpus_id: str,
+    client_id: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+) -> RagCorpusDeleteResponse:
+
+    authenticate(api_key)
+
+    try:
+        return RagCorpusLifecycleService(
+            db
+        ).delete_corpus(
+            client_id=client_id,
+            corpus_id=corpus_id,
+        )
+
+    except RagCorpusNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Erreur suppression corpus RAG: "
+                f"{str(exc)}"
+            ),
+        ) from exc
 
 @router.post("/corpora/resync", response_model=RagCorpusResyncResponse, summary="Resynchroniser un corpus RAG")
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")

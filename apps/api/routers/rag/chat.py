@@ -14,7 +14,7 @@ from services.rag.conversations.conversation_repository import RagConversationRe
 from .common import RATE_LIMIT_RPM, api_key_header, format_sse_event
 
 router = APIRouter(prefix="/rag", tags=["rag"])
-
+MESSAGE_HISTORY_LIMIT = 6
 
 def _conversation_title(question: str) -> str:
     title = question.strip()
@@ -38,6 +38,7 @@ async def chat_with_rag_stream(
             conversation_id=payload.conversation_id,
             client_id=payload.client_id,
             corpus_id=payload.corpus_id,
+            user_id=payload.user_id,
         )
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
@@ -45,12 +46,13 @@ async def chat_with_rag_stream(
         conversation = conversation_repository.create_conversation(
             client_id=payload.client_id,
             corpus_id=payload.corpus_id,
+            user_id=payload.user_id,
             title=payload.question[:80],
         )
 
     conversation_id = conversation.conversation_id
     conversation_history = conversation_repository.to_history_payload(
-        conversation_repository.get_recent_messages(conversation_id=conversation_id, limit=6)
+        conversation_repository.get_recent_messages(conversation_id=conversation_id, limit=MESSAGE_HISTORY_LIMIT)
     )
     conversation_repository.create_message(
         conversation_id=conversation_id,
@@ -72,6 +74,7 @@ async def chat_with_rag_stream(
             {
                 "conversation_id": conversation_id,
                 "client_id": payload.client_id,
+                "user_id": payload.user_id,
                 "corpus_id": payload.corpus_id,
             },
         )
@@ -103,26 +106,37 @@ async def chat_with_rag_stream(
                     continue
 
             final_answer = "".join(answer_parts).strip()
-            conversation_repository.create_message(
+            conversation_repository.create_assistant_message_and_prune(
                 conversation_id=conversation_id,
-                role="assistant",
                 content=final_answer,
                 sources=final_sources,
                 metadata={
                     **(done_payload.get("metadata") or {}),
                     "stream": True,
-                    "used_chunks_count": done_payload.get("used_chunks_count", 0),
-                    "retrieval_confidence": done_payload.get("retrieval_confidence"),
+                    "used_chunks_count": done_payload.get(
+                        "used_chunks_count", 0
+                    ),
+                    "retrieval_confidence": done_payload.get(
+                        "retrieval_confidence"
+                    ),
                     "top_score": done_payload.get("top_score"),
-                    "retrieval_candidates_count": done_payload.get("retrieval_candidates_count", 0),
-                    "filtered_chunks_count": done_payload.get("filtered_chunks_count", 0),
-                    "fallback": done_payload.get("fallback", False),
+                    "retrieval_candidates_count": done_payload.get(
+                        "retrieval_candidates_count", 0
+                    ),
+                    "filtered_chunks_count": done_payload.get(
+                        "filtered_chunks_count", 0
+                    ),
+                    "fallback": done_payload.get(
+                        "fallback", False
+                    ),
                 },
+                keep_last=MESSAGE_HISTORY_LIMIT,
             )
             yield format_sse_event(
                 "done",
                 {
                     "conversation_id": conversation_id,
+                    "user_id": payload.user_id,
                     "used_chunks_count": done_payload.get("used_chunks_count", 0),
                     "retrieval_confidence": done_payload.get("retrieval_confidence"),
                     "top_score": done_payload.get("top_score"),
@@ -162,6 +176,7 @@ async def rag_chat(
             conversation_id=payload.conversation_id,
             client_id=payload.client_id,
             corpus_id=payload.corpus_id,
+            user_id=payload.user_id,
         )
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversation RAG introuvable")
@@ -169,13 +184,14 @@ async def rag_chat(
         conversation = conversation_repository.create_conversation(
             client_id=payload.client_id,
             corpus_id=payload.corpus_id,
+            user_id=payload.user_id,
             title=_conversation_title(payload.question),
         )
 
     conversation_history = conversation_repository.to_history_payload(
         conversation_repository.get_recent_messages(
             conversation_id=conversation.conversation_id,
-            limit=6,
+            limit=MESSAGE_HISTORY_LIMIT,
         )
     )
     conversation_repository.create_message(
@@ -203,9 +219,8 @@ async def rag_chat(
         raise HTTPException(status_code=500, detail=f"Erreur génération RAG: {str(exc)}") from exc
 
     sources_payload = [source.model_dump() for source in response.sources]
-    conversation_repository.create_message(
+    conversation_repository.create_assistant_message_and_prune(
         conversation_id=conversation.conversation_id,
-        role="assistant",
         content=response.answer,
         sources=sources_payload,
         metadata={
@@ -213,10 +228,22 @@ async def rag_chat(
             "used_chunks_count": response.used_chunks_count,
             "retrieval_confidence": response.retrieval_confidence,
             "top_score": response.top_score,
-            "retrieval_candidates_count": response.retrieval_candidates_count,
-            "filtered_chunks_count": response.filtered_chunks_count,
-            "conversation_history_messages_count": len(conversation_history),
+            "retrieval_candidates_count": (
+                response.retrieval_candidates_count
+            ),
+            "filtered_chunks_count": (
+                response.filtered_chunks_count
+            ),
+            "conversation_history_messages_count": (
+                len(conversation_history)
+            ),
         },
+        keep_last=MESSAGE_HISTORY_LIMIT,
     )
 
-    return response.model_copy(update={"conversation_id": conversation.conversation_id})
+    return response.model_copy(
+        update={
+            "conversation_id": conversation.conversation_id,
+            "user_id": payload.user_id,
+        }
+    )

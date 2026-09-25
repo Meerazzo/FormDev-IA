@@ -110,6 +110,19 @@ class RagCorpusListResponse(BaseModel):
         }
     }
 
+class RagCorpusDeleteResponse(BaseModel):
+    """Bilan de suppression d'un corpus RAG."""
+
+    client_id: str
+    corpus_id: str
+    deleted: bool
+    is_active: bool
+    sources_deleted: int
+    conversations_deleted: int
+    messages_deleted: int
+    qdrant_cleanup_completed: bool
+    message: str
+
 class RagSourceResponse(BaseModel):
     """Vue API d'une source documentaire."""
 
@@ -340,6 +353,7 @@ class RagChatRequest(BaseModel):
 
     client_id: str
     corpus_id: str = "default"
+    user_id: str = Field(..., min_length=1, max_length=255)
     conversation_id: str | None = None
     question: str
     top_k: int = Field(default=5, ge=1, le=10)
@@ -352,6 +366,7 @@ class RagChatRequest(BaseModel):
             "example": {
                 "client_id": "client_demo",
                 "corpus_id": "default",
+                "user_id": "user_123",
                 "conversation_id": None,
                 "question": "Que doit faire le module RAG documentaire pour les réponses ?",
                 "top_k": 5,
@@ -368,6 +383,7 @@ class RagChatResponse(BaseModel):
     conversation_id: str | None = None
     client_id: str
     corpus_id: str
+    user_id: str | None = None
     question: str
     answer: str
     sources: list[RagChatSource] = Field(default_factory=list)
@@ -597,6 +613,7 @@ class RagConversationCreateRequest(BaseModel):
 
     client_id: str = Field(..., min_length=1)
     corpus_id: str = Field(default="default", min_length=1)
+    user_id: str = Field(..., min_length=1, max_length=255)
     title: str | None = None
 
     model_config = {
@@ -604,6 +621,7 @@ class RagConversationCreateRequest(BaseModel):
             "example": {
                 "client_id": "client_demo",
                 "corpus_id": "default",
+                "user_id": "user123",
                 "title": "Discussion sur la documentation RAG",
             }
         }
@@ -614,6 +632,7 @@ class RagConversationUpdateRequest(BaseModel):
 
     client_id: str = Field(..., min_length=1)
     corpus_id: str = Field(default="default", min_length=1)
+    user_id: str = Field(..., min_length=1, max_length=255)
     title: str = Field(..., min_length=1, max_length=200)
 
     model_config = {
@@ -632,6 +651,7 @@ class RagConversationResponse(BaseModel):
     conversation_id: str
     client_id: str
     corpus_id: str
+    user_id: str | None = None
     title: str | None = None
     messages_count: int = 0
     created_at: datetime | None = None
@@ -652,10 +672,11 @@ class RagConversationResponse(BaseModel):
     }
 
 class RagConversationListResponse(BaseModel):
-    """Liste des conversations RAG d'un client/corpus."""
+    """Liste des conversations RAG d'un utilisateur dans un client/corpus."""
 
     client_id: str
     corpus_id: str | None = None
+    user_id: str
     conversations_count: int
     conversations: list[RagConversationResponse]
 
@@ -712,5 +733,6 @@ class RagConversationDeleteResponse(BaseModel):
     conversation_id: str
     client_id: str
     corpus_id: str
+    user_id: str
     deleted: bool
     message: str

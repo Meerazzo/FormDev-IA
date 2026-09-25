@@ -189,3 +189,36 @@ class RagVectorStore:
             ),
             wait=True,
         )
+
+    def delete_corpus(
+        self,
+        *,
+        client_id: str,
+        corpus_id: str,
+    ) -> None:
+        """Supprime tous les points Qdrant d'un corpus client."""
+
+        self.ensure_collection()
+
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="client_id",
+                            match=models.MatchValue(
+                                value=client_id
+                            ),
+                        ),
+                        models.FieldCondition(
+                            key="corpus_id",
+                            match=models.MatchValue(
+                                value=corpus_id
+                            ),
+                        ),
+                    ]
+                )
+            ),
+            wait=True,
+        )
