@@ -7,6 +7,7 @@ Cette page décrit le contrat d'intégration du module Surveys pour un CRM ou un
 ```text
 POST /surveys/analyze
 GET  /surveys/processings/{processing_id}
+GET  /surveys/questionnaires/{questionnaire_id}/analyses
 POST /surveys/feedback
 GET  /surveys/feedback
 ```
@@ -24,11 +25,12 @@ Cycle standard côté CRM :
 
 ```text
 1. Envoyer les questionnaires avec POST /surveys/analyze
-2. Stocker le processing_id retourné
+2. Stocker le processing_id retourné pour le suivi immédiat
 3. Poller GET /surveys/processings/{processing_id}?client_id=...
 4. Quand status=FINISHED, lire result.questionnaires
-5. Afficher les segments à l'opérateur
-6. Envoyer les corrections via POST /surveys/feedback?client_id=...
+5. Utiliser GET /surveys/questionnaires/{questionnaire_id}/analyses pour retrouver ensuite l'historique métier sans connaître le processing_id
+6. Afficher les segments à l'opérateur
+7. Envoyer les corrections via POST /surveys/feedback?client_id=...
 ```
 
 ## Payload d'entrée — analyse
@@ -175,6 +177,61 @@ Une fois terminé, `result` reprend les questionnaires d'entrée et ajoute les s
 | `FINISHED` | Résultat disponible |
 | `FAILED` | Erreur |
 
+## Historique des analyses par questionnaire
+
+L'identifiant `questionnaires[].id` fourni lors de `POST /surveys/analyze` est indexé avec le traitement. Un même traitement peut contenir plusieurs questionnaires ; chacun est alors retrouvable indépendamment.
+
+Route :
+
+```text
+GET /surveys/questionnaires/{questionnaire_id}/analyses
+```
+
+Paramètres :
+
+| Paramètre | Emplacement | Obligatoire | Défaut | Rôle |
+| --- | --- | --- | --- | --- |
+| `questionnaire_id` | path | oui | — | Identifiant métier envoyé dans `questionnaires[].id`. |
+| `client_id` | query | oui | — | Isole les analyses du client concerné. |
+| `limit` | query | non | `20` | Nombre d'éléments retournés, de 1 à 100. |
+| `offset` | query | non | `0` | Décalage de pagination. |
+
+Exemple :
+
+```bash
+curl -s "$API/surveys/questionnaires/1/analyses?client_id=client_demo&limit=20&offset=0" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+Réponse :
+
+```json
+{
+  "client_id": "client_demo",
+  "questionnaire_id": "1",
+  "total": 2,
+  "limit": 20,
+  "offset": 0,
+  "items": [
+    {
+      "processing_id": "1f11aa54-a688-43c5-9fd4-9cf09c33364b",
+      "status": "FINISHED",
+      "created_at": "2026-09-26T11:31:39Z",
+      "finished_at": "2026-09-26T11:31:45Z",
+      "error_message": null,
+      "result": {
+        "id": 1,
+        "questions": []
+      }
+    }
+  ]
+}
+```
+
+Les éléments sont triés du plus récent au plus ancien. Pour un processing contenant plusieurs questionnaires, `result` ne contient que le questionnaire demandé. Les traitements `RECEIVED`, `QUEUED`, `STARTED` ou `FAILED` restent visibles avec `result: null`.
+
+L'isolation se fait sur `client_id + questionnaire_id` : le même `questionnaire_id` peut donc exister chez plusieurs clients sans mélanger leurs historiques.
+
 ## Feedback opérateur
 
 ```bash
@@ -253,7 +310,8 @@ La mémoire Survey est distincte du RAG documentaire. Elle sert aux few-shots dy
 
 - Toujours fournir `metadata.client_id` sur chaque questionnaire.
 - Ne pas mélanger plusieurs clients dans une même requête.
-- Stocker le `processing_id` côté CRM/front.
+- Stocker le `processing_id` côté CRM/front pour le suivi immédiat ; l'historique peut ensuite être retrouvé par `questionnaire_id`.
 - Poller raisonnablement `GET /surveys/processings/{processing_id}` jusqu'à `FINISHED` ou `FAILED`.
+- Pour un écran d'historique, utiliser `GET /surveys/questionnaires/{questionnaire_id}/analyses` avec `limit` et `offset`.
 - Stocker `response_id` et `point_id` pour permettre la relecture opérateur.
 - Envoyer les corrections opérateur via `/surveys/feedback` pour améliorer les futures analyses.

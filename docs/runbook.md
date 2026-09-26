@@ -59,6 +59,24 @@ Puis, en adaptant le nom du conteneur si nécessaire :
 docker exec -it infra-api-dev-1 alembic upgrade head
 ```
 
+## Vérifier le rate limit actif
+
+La limite est pilotée par `RATE_LIMIT_RPM` dans le fichier `infra/.env` de la machine. La valeur de `infra/.env.example` n'est qu'un exemple et ne permet pas de déduire la valeur réellement active sur un serveur.
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yml exec -T api-dev \
+  python -c 'from core.config import settings; print(settings.RATE_LIMIT_RPM)'
+```
+
+Pour la stack prod-like :
+
+```bash
+docker compose --profile prod --env-file infra/.env -f infra/docker-compose.yml exec -T api-prod \
+  python -c 'from core.config import settings; print(settings.RATE_LIMIT_RPM)'
+```
+
+Après modification de `RATE_LIMIT_RPM`, recréer ou redémarrer les services concernés pour recharger l'environnement.
+
 ## Variables utiles pour les tests curl
 
 Adapter `API` au port exposé par Docker Compose et `KEY` à une clé définie dans `infra/.env`.
@@ -67,6 +85,16 @@ Adapter `API` au port exposé par Docker Compose et `KEY` à une clé définie d
 export API="http://localhost:<API_PORT>"
 export KEY="<API_KEY>"
 ```
+
+## Routes Surveys disponibles
+
+| Méthode | Route | Usage |
+| --- | --- | --- |
+| POST | `/surveys/analyze` | Lancer une analyse asynchrone |
+| GET | `/surveys/processings/{processing_id}` | Suivre un processing |
+| GET | `/surveys/questionnaires/{questionnaire_id}/analyses` | Historique paginé par questionnaire |
+| POST | `/surveys/feedback` | Enregistrer un feedback opérateur |
+| GET | `/surveys/feedback` | Lire la mémoire de feedback |
 
 ## Routes RAG disponibles
 
@@ -194,6 +222,13 @@ Suivre le traitement :
 
 ```bash
 curl -s "$API/surveys/processings/$PROCESSING_ID?client_id=client_demo" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+Retrouver ensuite l'historique du questionnaire sans connaître le processing :
+
+```bash
+curl -s "$API/surveys/questionnaires/1/analyses?client_id=client_demo&limit=20&offset=0" \
   -H "X-API-Key: $KEY" | jq
 ```
 

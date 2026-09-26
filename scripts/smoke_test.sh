@@ -16,20 +16,20 @@ command -v jq >/dev/null || { echo "jq manquant" >&2; exit 1; }
 AUTH_HEADER="X-API-Key: ${API_KEY}"
 JSON_HEADER="Content-Type: application/json"
 
-echo "[1/9] Health"
+echo "[1/10] Health"
 curl -fsS "${API_URL}/health" | jq
 
-echo "[2/9] Swagger"
+echo "[2/10] Swagger"
 curl -fsS "${API_URL}/docs" >/dev/null
 echo "Swagger OK"
 
-echo "[3/9] Chat"
+echo "[3/10] Chat"
 CHAT_PAYLOAD=$(jq -n --arg model "${MODEL_ID}" '{model:$model,messages:[{role:"user",content:"Réponds uniquement avec : Chat OK"}],max_tokens:40,temperature:0.2,top_p:0.9,post_correction:false}')
 CHAT_JSON=$(curl -fsS -X POST "${API_URL}/v1/chat" -H "${AUTH_HEADER}" -H "${JSON_HEADER}" -d "${CHAT_PAYLOAD}")
 echo "${CHAT_JSON}" | jq
 echo "${CHAT_JSON}" | jq -e '.content | length > 0' >/dev/null
 
-echo "[4/9] Surveys analyze"
+echo "[4/10] Surveys analyze"
 SURVEY_PAYLOAD=$(jq -n --arg client "${CLIENT_ID}" '{questionnaires:[{id:1,availableCategories:[{id:10,label:"Satisfaction",metadata:{}},{id:11,label:"Amélioration",metadata:{}}],questions:[{id:100,label:"Avis général ?",type:"OPEN",answers:[{id:2000,type:"FREE_TEXT",label:"Le contenu était clair mais le rythme était parfois trop rapide.",metadata:{}}],metadata:{}}],metadata:{client_id:$client,source:"smoke_test"}}]}')
 SURVEY_JSON=$(curl -fsS -X POST "${API_URL}/surveys/analyze" -H "${AUTH_HEADER}" -H "${JSON_HEADER}" -d "${SURVEY_PAYLOAD}")
 echo "${SURVEY_JSON}" | jq
@@ -39,7 +39,7 @@ if [[ -z "${PROCESSING_ID}" || "${PROCESSING_ID}" == "null" ]]; then
   exit 1
 fi
 
-echo "[5/9] Surveys processing"
+echo "[5/10] Surveys processing"
 SURVEY_STATUS="UNKNOWN"
 for i in {1..20}; do
   PROCESSING_JSON=$(curl -fsS "${API_URL}/surveys/processings/${PROCESSING_ID}?client_id=${CLIENT_ID}" -H "${AUTH_HEADER}")
@@ -56,7 +56,15 @@ if [[ "${SURVEY_STATUS}" != "FINISHED" ]]; then
   exit 1
 fi
 
-echo "[6/9] RAG upload"
+echo "[6/10] Surveys questionnaire history"
+SURVEY_HISTORY_JSON=$(curl -fsS "${API_URL}/surveys/questionnaires/1/analyses?client_id=${CLIENT_ID}&limit=20&offset=0" -H "${AUTH_HEADER}")
+echo "${SURVEY_HISTORY_JSON}" | jq
+echo "${SURVEY_HISTORY_JSON}" | jq -e --arg processing_id "${PROCESSING_ID}" '
+  .total >= 1
+  and any(.items[]; .processing_id == $processing_id and (.result.id | tostring) == "1")
+' >/dev/null
+
+echo "[7/10] RAG upload"
 RAG_FILE=$(mktemp -t formdev-rag-smoke-XXXXXX.txt)
 SOURCE_ID=""
 cat > "${RAG_FILE}" <<'TXT'
@@ -80,16 +88,16 @@ if [[ -z "${SOURCE_ID}" || "${SOURCE_ID}" == "null" ]]; then
   exit 1
 fi
 
-echo "[7/9] RAG index"
+echo "[8/10] RAG index"
 curl -fsS -X POST "${API_URL}/rag/sources/${SOURCE_ID}/index" -H "${AUTH_HEADER}" | jq
 
-echo "[8/9] RAG search"
+echo "[9/10] RAG search"
 SEARCH_PAYLOAD=$(jq -n --arg client "${CLIENT_ID}" --arg corpus "${RAG_CORPUS_ID}" '{client_id:$client,corpus_id:$corpus,query:"Quel module utilise Qdrant ?",top_k:3,score_threshold:0.0}')
 SEARCH_JSON=$(curl -fsS -X POST "${API_URL}/rag/search" -H "${AUTH_HEADER}" -H "${JSON_HEADER}" -d "${SEARCH_PAYLOAD}")
 echo "${SEARCH_JSON}" | jq
 echo "${SEARCH_JSON}" | jq -e '.results_count >= 1' >/dev/null
 
-echo "[9/9] RAG chat"
+echo "[10/10] RAG chat"
 RAG_CHAT_PAYLOAD=$(
   jq -n \
     --arg client "${CLIENT_ID}" \

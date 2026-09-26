@@ -48,6 +48,10 @@ user_id
 
 `user_id` doit être un identifiant utilisateur stable fourni par le CRM/front. Une conversation créée pour un utilisateur ne peut pas être consultée, renommée, supprimée ou réutilisée par un autre utilisateur.
 
+Plusieurs utilisateurs peuvent partager le même corpus : ils utilisent le même `client_id + corpus_id`, donc les mêmes documents Qdrant, tout en conservant des conversations distinctes grâce à `user_id`. Ce comportement a été validé avec deux utilisateurs sur un même corpus.
+
+Le backend conserve au maximum les 6 derniers messages de chaque conversation. Le pruning est appliqué après chaque écriture utilisateur ou assistant, y compris avant l'appel LLM, afin que la limite reste respectée même si une génération échoue.
+
 Un même client peut avoir plusieurs corpus, par exemple `default`, `formation_securite`, `catalogue_2026`.
 
 ## Architecture technique

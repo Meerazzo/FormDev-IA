@@ -253,10 +253,13 @@ class SurveyQuestionnaireAnalysisItem(StrictModel):
 
 
 class SurveyQuestionnaireAnalysisListResponse(StrictModel):
-    client_id: str
-    questionnaire_id: str
-    total: int
-    limit: int
-    offset: int
-    items: List[SurveyQuestionnaireAnalysisItem]
+    client_id: str = Field(..., description="Identifiant du client propriétaire des analyses.")
+    questionnaire_id: str = Field(..., description="Identifiant métier du questionnaire recherché.")
+    total: int = Field(..., description="Nombre total d'analyses disponibles pour ce questionnaire.")
+    limit: int = Field(..., description="Limite de pagination appliquée.")
+    offset: int = Field(..., description="Décalage de pagination appliqué.")
+    items: List[SurveyQuestionnaireAnalysisItem] = Field(
+        default_factory=list,
+        description="Analyses triées du traitement le plus récent au plus ancien.",
+    )
 

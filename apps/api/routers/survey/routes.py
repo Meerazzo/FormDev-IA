@@ -72,6 +72,9 @@ Le client peut ensuite interroger :
 `GET /surveys/processings/{processing_id}`
 
 pour suivre l'état du traitement et récupérer le résultat final une fois terminé.
+
+Pour retrouver ensuite les analyses à partir de l'identifiant métier fourni dans `questionnaires[].id`, utiliser :
+`GET /surveys/questionnaires/{questionnaire_id}/analyses?client_id=...`.
 """,
     responses={
         200: {"description": "Traitement créé avec succès"},
@@ -342,8 +345,35 @@ le champ `result` contient uniquement le questionnaire demandé, même si la req
 d'origine contenait plusieurs questionnaires.
 """,
     responses={
-        200: {"description": "Historique récupéré avec succès"},
+        200: {
+            "description": "Historique récupéré avec succès",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "client_id": "client_demo",
+                        "questionnaire_id": "123",
+                        "total": 2,
+                        "limit": 20,
+                        "offset": 0,
+                        "items": [
+                            {
+                                "processing_id": "90affa60-99a4-488f-9e4d-2a752de4ca1f",
+                                "status": "FINISHED",
+                                "created_at": "2026-09-26T11:31:39Z",
+                                "finished_at": "2026-09-26T11:31:45Z",
+                                "error_message": None,
+                                "result": {
+                                    "id": 123,
+                                    "questions": [],
+                                },
+                            }
+                        ],
+                    }
+                }
+            },
+        },
         401: {"description": "Clé API invalide ou absente"},
+        422: {"description": "Paramètres de pagination invalides"},
         429: {"description": "Trop de requêtes"},
     },
 )
@@ -351,9 +381,23 @@ d'origine contenait plusieurs questionnaires.
 async def list_questionnaire_analyses(
     request: Request,
     questionnaire_id: str,
-    client_id: str = Query(..., min_length=1),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    client_id: str = Query(
+        ...,
+        min_length=1,
+        description="Identifiant du client propriétaire du questionnaire.",
+        examples=["client_demo"],
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="Nombre maximal d'analyses retournées.",
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Décalage de pagination dans l'historique trié du plus récent au plus ancien.",
+    ),
     db: Session = Depends(get_db),
     api_key: str | None = Security(api_key_header),
 ):

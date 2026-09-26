@@ -21,7 +21,17 @@ def _conversation_title(question: str) -> str:
     return title[:77].rstrip() + "..." if len(title) > 80 else title
 
 
-@router.post("/chat/stream", response_description="Flux SSE de réponse RAG", summary="Poser une question au chatbot RAG en streaming SSE")
+@router.post(
+    "/chat/stream",
+    response_description="Flux SSE de réponse RAG",
+    summary="Poser une question au chatbot RAG en streaming SSE",
+    description=(
+        "Interroge les documents du couple client_id + corpus_id et isole la conversation "
+        "par user_id. Plusieurs utilisateurs peuvent donc partager le même corpus sans "
+        "partager leurs conversations. Le backend conserve au maximum les 6 derniers "
+        "messages persistés de chaque conversation."
+    ),
+)
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def chat_with_rag_stream(
     request: Request,
@@ -160,7 +170,16 @@ async def chat_with_rag_stream(
     )
 
 
-@router.post("/chat", response_model=RagChatResponse, summary="Poser une question au chatbot RAG")
+@router.post(
+    "/chat",
+    response_model=RagChatResponse,
+    summary="Poser une question au chatbot RAG",
+    description=(
+        "Interroge les documents du couple client_id + corpus_id. user_id isole les "
+        "conversations entre utilisateurs, sans isoler les documents du corpus. "
+        "Le backend conserve au maximum les 6 derniers messages persistés de la conversation."
+    ),
+)
 @limiter.limit(f"{RATE_LIMIT_RPM}/minute")
 async def rag_chat(
     request: Request,

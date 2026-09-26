@@ -6,7 +6,7 @@ Le projet fournit trois briques principales :
 
 - **Projet 1 — RAG documentaire** : chatbot documentaire multi-client (`/rag/*`) avec ingestion de sources, indexation Qdrant, recherche vectorielle, conversations isolées par utilisateur et réponses sourcées.
 - **Projet 2 — Chat IA** : route de génération / transformation de texte (`/v1/chat`) via vLLM.
-- **Projet 3 — Surveys** : pipeline d'analyse de questionnaires de satisfaction (`/surveys/*`) avec traitement asynchrone, segmentation, classification, feedback opérateur et mémoire vectorielle par client.
+- **Projet 3 — Surveys** : pipeline d'analyse de questionnaires de satisfaction (`/surveys/*`) avec traitement asynchrone, historique paginé par `questionnaire_id`, segmentation, classification, feedback opérateur et mémoire vectorielle par client.
 
 ---
 
@@ -259,7 +259,7 @@ Résumé des routes principales :
 | --- | --- |
 | System | `GET /health` |
 | Chat IA | `POST /v1/chat` |
-| Surveys | `POST /surveys/analyze`, `GET /surveys/processings/{processing_id}`, `POST /surveys/feedback`, `GET /surveys/feedback` |
+| Surveys | `POST /surveys/analyze`, `GET /surveys/processings/{processing_id}`, `GET /surveys/questionnaires/{questionnaire_id}/analyses`, `POST /surveys/feedback`, `GET /surveys/feedback` |
 | RAG | `/rag/health`, `/rag/sources/*`, `/rag/corpora/*`, `/rag/search`, `/rag/chat`, `/rag/chat/stream`, `/rag/conversations/*`, `/rag/jobs/*` |
 
 ---
@@ -275,9 +275,10 @@ Tables principales :
 - `validated_response_points`
 - `point_feedback`
 - `survey_processing_jobs`
+- `survey_processing_questionnaires` : index des traitements par `client_id + questionnaire_id` pour l'historique paginé ;
 - `ai_interactions`
 - tables RAG de sources, corpus, conversations et jobs ;
-- conversations RAG isolées par `client_id + corpus_id + user_id`, avec conservation backend des 6 derniers messages.
+- conversations RAG isolées par `client_id + corpus_id + user_id`, avec conservation stricte des 6 derniers messages après chaque écriture utilisateur ou assistant.
 
 ### Qdrant
 

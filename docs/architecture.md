@@ -66,6 +66,7 @@ Routes exposées :
 | --- | --- | --- |
 | POST | `/surveys/analyze` | Lancer une analyse asynchrone de questionnaires |
 | GET | `/surveys/processings/{processing_id}` | Suivre un traitement et récupérer son résultat final |
+| GET | `/surveys/questionnaires/{questionnaire_id}/analyses` | Récupérer l'historique paginé d'un questionnaire métier |
 | POST | `/surveys/feedback` | Enregistrer un feedback opérateur sur les points analysés |
 | GET | `/surveys/feedback` | Lister les exemples de feedback/mémoire d'un client |
 
@@ -83,6 +84,8 @@ vLLM analyse les réponses
 PostgreSQL stocke le résultat
   ↓
 GET /surveys/processings/{processing_id}
+  ↓
+GET /surveys/questionnaires/{questionnaire_id}/analyses
   ↓
 POST /surveys/feedback
   ↓
@@ -165,7 +168,9 @@ Pour le RAG, les recherches Qdrant sont filtrées par `client_id` et `corpus_id`
 
 Les conversations ajoutent `user_id` et sont accessibles uniquement dans le scope `client_id + corpus_id + user_id`. Le backend conserve les 6 derniers messages de chaque conversation comme fenêtre de contexte récente.
 
-Pour Surveys, les exemples validés sont rattachés au client concerné.
+Pour Surveys, les exemples validés sont rattachés au client concerné. Les traitements client sont aussi indexés dans `survey_processing_questionnaires` par `client_id + questionnaire_id`, ce qui permet de retrouver les analyses passées sans dépendre du `processing_id`.
+
+Pour le RAG, plusieurs `user_id` peuvent partager le même corpus tant qu'ils utilisent le même couple `client_id + corpus_id`. La recherche documentaire est commune à ce couple, tandis que les conversations restent isolées par `user_id`. Le backend garantit au maximum 6 messages persistés par conversation après chaque écriture.
 
 ## Cycle de vie Qdrant RAG
 

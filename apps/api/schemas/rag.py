@@ -351,10 +351,24 @@ class RagSourceCitation(BaseModel):
 class RagChatRequest(BaseModel):
     """Requête de chat RAG."""
 
-    client_id: str
-    corpus_id: str = "default"
-    user_id: str = Field(..., min_length=1, max_length=255)
-    conversation_id: str | None = None
+    client_id: str = Field(
+        ...,
+        description="Identifiant du client. Avec corpus_id, détermine le corpus documentaire interrogé.",
+    )
+    corpus_id: str = Field(
+        default="default",
+        description="Corpus documentaire partagé par les utilisateurs utilisant le même client_id.",
+    )
+    user_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Identifiant utilisateur stable utilisé pour isoler ses conversations.",
+    )
+    conversation_id: str | None = Field(
+        default=None,
+        description="Conversation existante à poursuivre. Elle doit appartenir au même client_id, corpus_id et user_id.",
+    )
     question: str
     top_k: int = Field(default=5, ge=1, le=10)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -400,6 +414,7 @@ class RagChatResponse(BaseModel):
                 "conversation_id": "rag_conv_956f9d5b6e1944359cb3120029bd1274",
                 "client_id": "client_demo",
                 "corpus_id": "default",
+                "user_id": "user_123",
                 "question": "Que doit faire le module RAG documentaire pour les réponses ?",
                 "answer": "Le module RAG documentaire doit générer ses réponses uniquement à partir des documents fournis.",
                 "sources": [

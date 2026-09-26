@@ -28,6 +28,7 @@ Il vérifie notamment :
 - Swagger / OpenAPI ;
 - `POST /v1/chat` ;
 - `POST /surveys/analyze` puis suivi du processing ;
+- historique Survey par `questionnaire_id` ;
 - upload RAG ;
 - indexation RAG ;
 - recherche RAG ;
