@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -223,3 +224,39 @@ class SurveyProcessingStatusResponse(StrictModel):
         None,
         description="Résultat final de l'analyse lorsque le traitement est terminé.",
     )
+
+class SurveyQuestionnaireAnalysisItem(StrictModel):
+    processing_id: str = Field(
+        ...,
+        description="Identifiant du traitement ayant produit cette analyse.",
+    )
+    status: str = Field(
+        ...,
+        description="Statut du traitement : RECEIVED, QUEUED, STARTED, FINISHED ou FAILED.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Date de création du traitement.",
+    )
+    finished_at: Optional[datetime] = Field(
+        None,
+        description="Date de fin du traitement lorsqu'il est terminé.",
+    )
+    error_message: Optional[str] = Field(
+        None,
+        description="Message d'erreur éventuel.",
+    )
+    result: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Résultat du questionnaire demandé lorsque l'analyse est terminée.",
+    )
+
+
+class SurveyQuestionnaireAnalysisListResponse(StrictModel):
+    client_id: str
+    questionnaire_id: str
+    total: int
+    limit: int
+    offset: int
+    items: List[SurveyQuestionnaireAnalysisItem]
+

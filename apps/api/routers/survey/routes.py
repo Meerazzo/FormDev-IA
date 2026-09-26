@@ -4,6 +4,7 @@ Routes HTTP d'analyse des questionnaires de satisfaction.
 API publique retenue :
 - POST /surveys/analyze
 - GET  /surveys/processings/{processing_id}
+- GET  /surveys/questionnaires/{questionnaire_id}/analyses
 - POST /surveys/feedback
 
 Les endpoints sont protégés par clé API et soumis au rate limiting.
@@ -23,10 +24,12 @@ from schemas.surveys import (
     SurveyFeedbackResponse,
     SurveyProcessingCreateResponse,
     SurveyProcessingStatusResponse,
+    SurveyQuestionnaireAnalysisListResponse,
 )
 from schemas.survey_client import ClientQuestionnaireAnalyzeRequest
 from services.survey_feedback import SurveyFeedbackService
 from services.survey_form_analyzer import SurveyFormAnalyzerService
+from services.survey_analysis_history import SurveyAnalysisHistoryService
 from services.vllm_client import VLLMClient
 from services.survey_queue import enqueue_survey_job
 from services.survey_example_memory import SurveyExampleMemoryService
@@ -324,6 +327,53 @@ async def get_processing_status(
         "survey_id": job.survey_id,
         "error_message": job.error_message,
         "result": job.result_json if job.status == "FINISHED" else None,
+    }
+
+
+@router.get(
+    "/questionnaires/{questionnaire_id}/analyses",
+    response_model=SurveyQuestionnaireAnalysisListResponse,
+    summary="Lister les analyses d'un questionnaire",
+    description="""
+Retourne l'historique paginé des traitements ayant contenu le questionnaire métier demandé.
+
+Les résultats sont triés du plus récent au plus ancien. Pour un traitement terminé,
+le champ `result` contient uniquement le questionnaire demandé, même si la requête
+d'origine contenait plusieurs questionnaires.
+""",
+    responses={
+        200: {"description": "Historique récupéré avec succès"},
+        401: {"description": "Clé API invalide ou absente"},
+        429: {"description": "Trop de requêtes"},
+    },
+)
+@limiter.limit(f"{RATE_LIMIT_RPM}/minute")
+async def list_questionnaire_analyses(
+    request: Request,
+    questionnaire_id: str,
+    client_id: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    api_key: str | None = Security(api_key_header),
+):
+    authenticate(api_key)
+
+    service = SurveyAnalysisHistoryService(db=db)
+    total, items = service.list_analyses(
+        client_id=client_id,
+        questionnaire_id=questionnaire_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return {
+        "client_id": client_id,
+        "questionnaire_id": questionnaire_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
     }
 
 

@@ -12,6 +12,7 @@ from core.feature_config import (
     SURVEY_FORM_MAX_RESPONSE_LENGTH,
 )
 from db.models.survey_processing_job import SurveyProcessingJob
+from db.models.survey_processing_questionnaire import SurveyProcessingQuestionnaire
 from services.survey_analyzer import SurveyAnalyzerService
 from services.survey_question_selector import SurveyQuestionSelectorService
 
@@ -131,6 +132,12 @@ class SurveyFormAnalyzerService:
     ) -> SurveyProcessingJob:
         processing_id = str(uuid.uuid4())
 
+        questionnaire_ids = [str(questionnaire.id) for questionnaire in payload.questionnaires]
+        if len(questionnaire_ids) != len(set(questionnaire_ids)):
+            raise ValueError(
+                "A questionnaire id cannot appear more than once in the same analysis request."
+            )
+
         job = SurveyProcessingJob(
             processing_id=processing_id,
             survey_id="client_questionnaires",
@@ -140,10 +147,27 @@ class SurveyFormAnalyzerService:
             request_payload_json=payload.model_dump(),
         )
 
-        self.db.add(job)
-        self.db.commit()
-        self.db.refresh(job)
-        return job
+        try:
+            self.db.add(job)
+
+            if client_id is not None:
+                self.db.add_all(
+                    [
+                        SurveyProcessingQuestionnaire(
+                            processing_id=processing_id,
+                            client_id=client_id,
+                            questionnaire_id=questionnaire_id,
+                        )
+                        for questionnaire_id in questionnaire_ids
+                    ]
+                )
+
+            self.db.commit()
+            self.db.refresh(job)
+            return job
+        except Exception:
+            self.db.rollback()
+            raise
 
     def create_processing_job(
         self,
