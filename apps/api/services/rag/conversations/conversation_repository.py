@@ -198,18 +198,18 @@ class RagConversationRepository:
         return message
 
 
-    def create_assistant_message_and_prune(
+    def create_message_and_prune(
         self,
         *,
         conversation_id: str,
+        role: str,
         content: str,
         sources: list[dict] | None = None,
         metadata: dict | None = None,
         keep_last: int = 6,
     ) -> RagMessage:
         """
-        Enregistre la réponse assistant et prune l'historique
-        dans la même transaction SQL.
+        Enregistre un message et prune l'historique dans la même transaction SQL.
         """
 
         if keep_last < 1:
@@ -220,7 +220,7 @@ class RagConversationRepository:
         try:
             message = self._add_message(
                 conversation_id=conversation_id,
-                role="assistant",
+                role=role,
                 content=content,
                 sources=sources,
                 metadata=metadata,
@@ -241,6 +241,25 @@ class RagConversationRepository:
         except Exception:
             self.db.rollback()
             raise
+
+
+    def create_assistant_message_and_prune(
+        self,
+        *,
+        conversation_id: str,
+        content: str,
+        sources: list[dict] | None = None,
+        metadata: dict | None = None,
+        keep_last: int = 6,
+    ) -> RagMessage:
+        return self.create_message_and_prune(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=content,
+            sources=sources,
+            metadata=metadata,
+            keep_last=keep_last,
+        )
 
 
     def _prune_messages(

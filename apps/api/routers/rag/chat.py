@@ -54,12 +54,13 @@ async def chat_with_rag_stream(
     conversation_history = conversation_repository.to_history_payload(
         conversation_repository.get_recent_messages(conversation_id=conversation_id, limit=MESSAGE_HISTORY_LIMIT)
     )
-    conversation_repository.create_message(
+    conversation_repository.create_message_and_prune(
         conversation_id=conversation_id,
         role="user",
         content=payload.question,
         sources=None,
         metadata=None,
+        keep_last=MESSAGE_HISTORY_LIMIT,
     )
 
     service = RagService()
@@ -194,7 +195,7 @@ async def rag_chat(
             limit=MESSAGE_HISTORY_LIMIT,
         )
     )
-    conversation_repository.create_message(
+    conversation_repository.create_message_and_prune(
         conversation_id=conversation.conversation_id,
         role="user",
         content=payload.question,
@@ -202,6 +203,7 @@ async def rag_chat(
             "top_k": payload.top_k,
             "score_threshold": payload.score_threshold,
         },
+        keep_last=MESSAGE_HISTORY_LIMIT,
     )
 
     try:
