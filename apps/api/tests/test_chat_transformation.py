@@ -63,7 +63,7 @@ class ChatTransformationTests(unittest.TestCase):
         transformation, generation = CHAT_TECHNICAL_CONTRACT.split(
             "Ces restrictions de préservation", 1,
         )
-        self.assertIn("Lorsqu'un texte source est fourni à transformer", transformation)
+        self.assertIn("Lorsqu'une instruction métier demande de transformer un texte", transformation)
         self.assertIn("n'ajoute aucun gras, italique, titre, liste", transformation)
         self.assertIn("En génération pure, sans texte source à transformer", generation)
         self.assertIn("utilise la structure et la mise en forme adaptées", generation)
