@@ -10,6 +10,7 @@ from core.feature_config import (
 )
 from services.chat_format import (
     contains_html,
+    has_meaningful_expansion,
     preserves_block_structure,
     preserves_format,
     respects_single_output,
@@ -259,6 +260,50 @@ class ChatTransformationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         sent = self.upstream.await_args.args[0]["messages"]
         self.assertIn('"source":', sent[1]["content"])
+
+    def test_expansion_requires_real_text_growth(self):
+        source = (
+            "<p>La formation aborde la prévention des risques.</p>"
+            "<p><strong>Objectif :</strong> améliorer les pratiques professionnelles.</p>"
+        )
+        unchanged = source
+        expanded = (
+            "<p>La formation aborde la prévention des risques afin d'aider les participants "
+            "à mieux identifier les situations à surveiller dans leur pratique.</p>"
+            "<p><strong>Objectif :</strong> améliorer les pratiques professionnelles en "
+            "favorisant une analyse plus rigoureuse des risques et des mesures de prévention.</p>"
+        )
+        self.assertFalse(has_meaningful_expansion(source, unchanged))
+        self.assertTrue(has_meaningful_expansion(source, expanded))
+
+    def test_expansion_retries_unchanged_output_and_accepts_enriched_html(self):
+        source = (
+            "<p>La formation aborde la prévention des risques.</p>"
+            "<p><strong>Objectif :</strong> améliorer les pratiques professionnelles.</p>"
+        )
+        expanded = (
+            "<p>La formation aborde la prévention des risques afin de mieux repérer les "
+            "situations à surveiller et les mesures adaptées.</p>"
+            "<p><strong>Objectif :</strong> améliorer les pratiques professionnelles en "
+            "renforçant l'identification, l'évaluation et la prévention des risques.</p>"
+        )
+        self.upstream.side_effect = [
+            support.completion(source),
+            support.completion(expanded),
+        ]
+        response = self.request(
+            system_prompt=(
+                "Développe le contenu en apportant des précisions utiles et cohérentes "
+                "à partir des informations présentes, sans inventer de faits externes."
+            ),
+            messages=[{"role": "user", "content": source}],
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["content"], expanded)
+        self.assertEqual(self.upstream.await_count, 2)
+        retry = self.upstream.await_args_list[1].args[0]["messages"][1]["content"]
+        self.assertIn("sensiblement plus développé", retry)
+        self.assertIn("ne supprime", retry)
 
     def test_invalid_corrections_fall_back_and_still_count_usage(self):
         original = "<p>Version précédente</p>"

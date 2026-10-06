@@ -17,6 +17,15 @@ class _TagCollector(HTMLParser):
         self.counts[tag] += 1
 
 
+class _TextCollector(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
 def _tags(text: str) -> set[str]:
     parser = _TagCollector()
     parser.feed(text)
@@ -98,3 +107,27 @@ def unwrap_transformation_output(text: str) -> str:
         if isinstance(value, str):
             return value
     return text
+
+
+
+def _visible_text(text: str) -> str:
+    """Extrait le texte utile sans réécrire le HTML."""
+    if not contains_html(text):
+        return " ".join((text or "").split())
+    try:
+        parser = _TextCollector()
+        parser.feed(text)
+        parser.close()
+        return " ".join(" ".join(parser.parts).split())
+    except (AssertionError, ValueError):
+        return ""
+
+
+def has_meaningful_expansion(before: str, after: str) -> bool:
+    """Vérifie qu'un étoffement ajoute réellement du contenu textuel."""
+    original = _visible_text(before)
+    candidate = _visible_text(after)
+    if not original:
+        return len(candidate) >= 20
+    minimum_gain = max(12, int(len(original) * 0.12))
+    return len(candidate) >= len(original) + minimum_gain
