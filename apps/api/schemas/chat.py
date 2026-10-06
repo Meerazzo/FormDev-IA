@@ -83,7 +83,7 @@ class ChatRequest(BaseModel):
         max_length=CHAT_MAX_TEXT_CHARS,
         description=(
             "Prompt système optionnel fourni par le client. "
-            "S'il est renseigné, il remplace le prompt système par défaut du backend."
+            "S'il est renseigné, il remplace les instructions métier par défaut. Le contrat technique backend reste présent."
         ),
         examples=[
             "Tu es un assistant de reformulation. Reformule le texte en français professionnel, clair et fluide."
@@ -94,7 +94,7 @@ class ChatRequest(BaseModel):
         max_length=CHAT_MAX_TEXT_CHARS,
         description=(
             "Prompt système optionnel pour la phase de post-correction. "
-            "S'il est renseigné et que post_correction=true, il remplace le prompt de correction par défaut."
+            "Avec post_correction=true, il remplace les instructions métier de correction. Le contrat technique backend reste présent."
         ),
         examples=[
             "Tu es un correcteur linguistique. Corrige les fautes et améliore légèrement la fluidité sans changer le sens."
