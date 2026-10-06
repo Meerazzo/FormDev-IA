@@ -1,6 +1,7 @@
 """Contrôles ciblés Chat ; aucune réécriture ni sanitization HTML."""
 from collections import Counter
 from html.parser import HTMLParser
+import json
 import re
 
 
@@ -78,3 +79,22 @@ def respects_single_output(text: str) -> bool:
     ):
         return False
     return True
+
+
+
+def unwrap_transformation_output(text: str) -> str:
+    """Retire uniquement une enveloppe JSON simple ajoutée par le modèle."""
+    stripped = (text or "").strip()
+    if not stripped.startswith("{"):
+        return text
+    try:
+        payload = json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        return text
+    if not isinstance(payload, dict) or len(payload) != 1:
+        return text
+    for key in ("result", "source"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    return text
