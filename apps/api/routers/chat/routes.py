@@ -201,10 +201,13 @@ def _build_transformation_retry_messages(
     expansion_instruction = ""
     if _is_expansion_prompt(system_prompt):
         expansion_instruction = (
-            " Cette opération est un étoffement : ajoute réellement des précisions utiles "
-            "à l'intérieur des blocs existants, sans inventer de faits externes. "
-            "Le texte final doit être sensiblement plus développé que la source. "
-            "Ne crée, ne supprime, ne fusionne et ne réordonne aucune balise HTML."
+            " Cette opération est un étoffement : développe réellement chaque bloc textuel "
+            "en ajoutant des précisions ou explications directement déduites de la source, "
+            "sans inventer de faits externes. Le texte final doit être sensiblement plus "
+            "développé que la source. Si un <strong> ou <b> contient un libellé bref comme "
+            "\"Objectif :\", conserve ce libellé et développe le texte adjacent. "
+            "Conserve exactement le même nombre et le même ordre de balises HTML : "
+            "ne crée, ne supprime, ne fusionne et ne réordonne aucune balise."
         )
     return [
         {
@@ -668,7 +671,11 @@ async def chat(
                     transformation_source,
                     payload.system_prompt,
                 )
-                retry_payload["temperature"] = 0.1
+                retry_payload["temperature"] = (
+                    max(payload.temperature, 0.3)
+                    if require_expansion
+                    else 0.1
+                )
 
                 retry_raw_response = await vllm.chat_completions(retry_payload)
                 retry_content, retry_finish_reason, retry_usage = _extract_main_fields(

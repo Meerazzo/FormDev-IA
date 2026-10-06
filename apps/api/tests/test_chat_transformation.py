@@ -301,9 +301,12 @@ class ChatTransformationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["content"], expanded)
         self.assertEqual(self.upstream.await_count, 2)
-        retry = self.upstream.await_args_list[1].args[0]["messages"][1]["content"]
+        retry_payload = self.upstream.await_args_list[1].args[0]
+        retry = retry_payload["messages"][1]["content"]
         self.assertIn("sensiblement plus développé", retry)
-        self.assertIn("ne supprime", retry)
+        self.assertIn("développe le texte adjacent", retry)
+        self.assertIn("même nombre et le même ordre de balises HTML", retry)
+        self.assertEqual(retry_payload["temperature"], 0.3)
 
     def test_invalid_corrections_fall_back_and_still_count_usage(self):
         original = "<p>Version précédente</p>"
