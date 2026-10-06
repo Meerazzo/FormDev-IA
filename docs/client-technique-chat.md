@@ -128,3 +128,42 @@ curl -s -X POST "$API/v1/chat" \
 - Limiter `max_tokens` pour éviter des réponses trop longues.
 - Stocker `usage.total_tokens` si le CRM veut suivre la consommation.
 - Activer `post_correction` seulement si une seconde inférence est acceptable en coût/latence.
+
+## Limites de taille et de contexte
+
+Les prompts ne sont plus limites a 4 000 caracteres. Un garde-fou
+applicatif autorise au plus 256 messages et 100 000 caracteres cumules
+(contenus des messages, system_prompt, post_correction_prompt et model).
+Les prompts sont comptes meme si la post-correction est desactivee.
+Un depassement de ce garde-fou produit le 422 de validation habituel.
+
+Ce garde-fou ne mesure pas les tokens et ne garantit pas que la requete
+tient dans le contexte. Il ne constitue pas une limite du corps HTTP brut.
+vLLM reste l'autorite pour le comptage exact avec le tokenizer et le
+template du modele : entree complete + budget de sortie doivent tenir
+dans MAX_MODEL_LEN (8192 dans la configuration de l'incident).
+max_tokens conserve ses bornes 1 a 1024.
+
+Un HTTP 400 vLLM avec un message reconnu de depassement de contexte
+devient HTTP 422, avec detail.code = "context_too_long" et
+detail.message = "Le contexte dépasse la capacité du modèle. Réduisez l'historique, les prompts ou max_tokens."
+Le CRM doit reduire la requete avant de retenter. Aucun corps d'erreur
+vLLM ni traceback n'est renvoye. Les autres erreurs upstream restent 502.
+
+Cette regle couvre la generation, la continuation (budget de 150 tokens)
+et la post-correction (budget max(max_tokens, 256)). Une passe ulterieure
+peut echouer apres une generation reussie ; aucune reponse partielle
+n'est alors renvoyee. Reduire les prompts ou l'historique reste necessaire
+si reduire max_tokens ne suffit pas pour cette passe.
+Il n'y a ni troncature automatique ni estimation caracteres/tokens.
+
+Seuls model, messages, max_tokens, temperature et top_p sont transmis
+comme parametres vLLM. Les prompts internes restent utilises pour
+construire les messages systeme. post_correction, system_prompt et
+post_correction_prompt ne sont jamais transmis comme champs bruts.
+
+Tests isoles, sans GPU ni base externe, depuis la racine du depot :
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=apps/api python -B -m unittest discover -s apps/api/tests -p test_chat_limits.py -v
+
+La detection cible les messages de vLLM 0.16.0. Un format inconnu reste
+une erreur upstream 502 et necessite un nouveau cas de regression.

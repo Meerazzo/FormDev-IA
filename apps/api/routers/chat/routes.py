@@ -12,6 +12,8 @@ Fonctionnalités :
 - gestion centralisée des erreurs réseau
 """
 
+import json
+import re
 import time
 
 from fastapi import APIRouter, HTTPException, Request, Security, Body
@@ -40,6 +42,41 @@ vllm = VLLMClient()  # Instance du client vLLM utilisée pour appeler le serveur
 
 # Petit budget de continuation quand la première réponse a été coupée
 CONTINUATION_MAX_TOKENS = 150
+
+# Parametres exposes par Chat et acceptes par vLLM.
+VLLM_CHAT_FIELDS = {"model", "messages", "max_tokens", "temperature", "top_p"}
+
+# Messages de validation de contexte de vLLM 0.16.0.
+_CONTEXT_ERROR_PATTERNS = (
+    r"You passed \d+ input (?:tokens|characters) and requested \d+ output tokens\. "
+    r"However, the model's context length is only \d+ tokens, "
+    r"resulting in a maximum input length of \d+ tokens\b",
+    r"This model's maximum context length is \d+ tokens\. "
+    r"However, your request has \d+ input tokens\.",
+    r"'max_tokens' or 'max_completion_tokens' is too large: \d+\. "
+    r"This model's maximum context length is \d+ tokens "
+    r"and your request has \d+ input tokens\b",
+)
+
+
+def _is_context_too_long(error: VLLMUpstreamError) -> bool:
+    if error.status_code != 400:
+        return False
+    try:
+        body = json.loads(error.body)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(body, dict):
+        return False
+    info = body.get("error")
+    if not isinstance(info, dict):
+        return False
+    message = info.get("message")
+    if not isinstance(message, str):
+        return False
+    message = " ".join(message.split())
+    return any(re.match(pattern, message) for pattern in _CONTEXT_ERROR_PATTERNS)
+
 
 
 def _extract_input_text(messages: list[dict]) -> str | None:
@@ -208,6 +245,7 @@ Cette limite correspond à la taille totale de la requête, c’est-à-dire :
     responses={
         200: {"description": "Réponse générée par le modèle"},
         401: {"description": "Clé API absente ou invalide"},
+        422: {"description": "Payload invalide ou contexte trop long (context_too_long)"},
         429: {"description": "Limite de requêtes atteinte"},
         502: {"description": "Erreur du serveur d'inférence ou du proxy IA"},
     },
@@ -424,8 +462,9 @@ async def chat(
     try:
         t0 = time.perf_counter()
 
-        base_payload = payload.model_dump(exclude_none=True)
-        base_payload.pop("post_correction", None)
+        base_payload = payload.model_dump(
+            include=VLLM_CHAT_FIELDS, exclude_none=True,
+        )
         base_payload["messages"] = backend_messages
 
         raw_response = await vllm.chat_completions(base_payload)
@@ -439,8 +478,9 @@ async def chat(
         # Si la réponse a été coupée par la limite de longueur,
         # on fait une seule relance pour terminer proprement.
         if finish_reason == "length" and content.strip():
-            continuation_payload = payload.model_dump(exclude_none=True)
-            continuation_payload.pop("post_correction", None)
+            continuation_payload = payload.model_dump(
+                include=VLLM_CHAT_FIELDS, exclude_none=True,
+            )
             continuation_payload["messages"] = backend_messages + [
                 {
                     "role": "assistant",
@@ -488,8 +528,9 @@ async def chat(
             }
         # Post-correction optionnelle : seconde inférence pour améliorer le français
         if payload.post_correction and final_content.strip():
-            correction_payload = payload.model_dump(exclude_none=True)
-            correction_payload.pop("post_correction", None)
+            correction_payload = payload.model_dump(
+                include=VLLM_CHAT_FIELDS, exclude_none=True,
+            )
             correction_payload["messages"] = _build_post_correction_messages(
                 final_content,
                 post_correction_prompt=payload.post_correction_prompt,
@@ -583,6 +624,19 @@ async def chat(
         raise HTTPException(status_code=502, detail="Cannot reach inference server (vLLM)")
 
     except VLLMUpstreamError as e:
+        context_too_long = _is_context_too_long(e)
+        status_code = 422 if context_too_long else 502
+        detail = (
+            {
+                "code": "context_too_long",
+                "message": (
+                    "Le contexte dépasse la capacité du modèle. "
+                    "Réduisez l'historique, les prompts ou max_tokens."
+                ),
+            }
+            if context_too_long
+            else f"vLLM upstream error ({e.status_code})"
+        )
         log_ai_interaction_error(
             request_id=req_id,
             project="project_2",
@@ -593,14 +647,14 @@ async def chat(
             input_text=input_text,
             messages_json=backend_messages,
             request_params_json=request_params_json,
-            status_code=502,
-            error_type="VLLMUpstreamError",
-            error_message=f"vLLM upstream error ({e.status_code})",
+            status_code=status_code,
+            error_type="context_too_long" if context_too_long else "VLLMUpstreamError",
+            error_message=detail["message"] if context_too_long else detail,
             pipeline_name="chat_gateway",
             pipeline_version="v1",
             metadata_json={"upstream_status_code": e.status_code},
         )
-        raise HTTPException(status_code=502, detail=f"vLLM upstream error ({e.status_code})")
+        raise HTTPException(status_code=status_code, detail=detail) from e
 
     except Exception as e:
         log_ai_interaction_error(

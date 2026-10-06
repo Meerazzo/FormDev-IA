@@ -9,7 +9,11 @@ Ces modèles documentent :
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+# Garde-fous applicatifs, sans conversion caracteres/tokens.
+CHAT_MAX_TEXT_CHARS = 100_000
+CHAT_MAX_MESSAGES = 256
 
 
 class ChatRole(str, Enum):
@@ -27,6 +31,7 @@ class ChatMessage(BaseModel):
     content: str = Field(
         ...,
         min_length=1,
+        max_length=CHAT_MAX_TEXT_CHARS,
         description="Contenu textuel du message",
         examples=["Dis bonjour en une phrase."],
     )
@@ -41,6 +46,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(
         ...,
         min_length=1,
+        max_length=CHAT_MAX_MESSAGES,
         description="Historique des messages transmis au modèle",
     )
     max_tokens: int = Field(
@@ -74,7 +80,7 @@ class ChatRequest(BaseModel):
     )
     system_prompt: Optional[str] = Field(
         default=None,
-        max_length=4000,
+        max_length=CHAT_MAX_TEXT_CHARS,
         description=(
             "Prompt système optionnel fourni par le client. "
             "S'il est renseigné, il remplace le prompt système par défaut du backend."
@@ -85,7 +91,7 @@ class ChatRequest(BaseModel):
     )
     post_correction_prompt: Optional[str] = Field(
         default=None,
-        max_length=4000,
+        max_length=CHAT_MAX_TEXT_CHARS,
         description=(
             "Prompt système optionnel pour la phase de post-correction. "
             "S'il est renseigné et que post_correction=true, il remplace le prompt de correction par défaut."
@@ -94,6 +100,19 @@ class ChatRequest(BaseModel):
             "Tu es un correcteur linguistique. Corrige les fautes et améliore légèrement la fluidité sans changer le sens."
         ],
     )
+
+    @model_validator(mode="after")
+    def validate_text_budget(self):
+        total = sum(len(message.content) for message in self.messages)
+        total += len(self.system_prompt or "")
+        total += len(self.post_correction_prompt or "")
+        total += len(self.model or "")
+        if total > CHAT_MAX_TEXT_CHARS:
+            raise ValueError(
+                f"Chat text exceeds the {CHAT_MAX_TEXT_CHARS} character safety limit"
+            )
+        return self
+
 
 class ChatResponseMessage(BaseModel):
     role: str = Field(
