@@ -98,9 +98,7 @@ class ChatTransformationTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["content"], source)
                 sent = self.upstream.await_args.args[0]["messages"]
-                self.assertEqual(sent[1]["role"], "user")
-                data = json.loads(sent[1]["content"].rsplit("\n", 1)[1])
-                self.assertEqual(data, {"source": source})
+                self.assertEqual(sent[1], {"role": "user", "content": source})
                 self.assertIn(CHAT_TECHNICAL_CONTRACT, sent[0]["content"])
 
     def test_format_checks(self):
