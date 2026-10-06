@@ -100,10 +100,10 @@ class ChatLimitsTests(unittest.TestCase):
             })
             for key in ("system_prompt", "post_correction_prompt", "post_correction"):
                 self.assertNotIn(key, sent)
-        self.assertIn(system, calls[0]["messages"][0]["content"])
-        self.assertIn(system, calls[1]["messages"][0]["content"])
+        self.assertEqual(calls[0]["messages"][0]["content"], system)
+        self.assertEqual(calls[1]["messages"][0]["content"], system)
         self.assertEqual(calls[1]["max_tokens"], 150)
-        self.assertIn(correction, calls[2]["messages"][0]["content"])
+        self.assertEqual(calls[2]["messages"][0]["content"], correction)
         self.assertIn("Debut fin", calls[2]["messages"][1]["content"])
 
     def test_long_unused_correction_prompt_is_accepted(self):

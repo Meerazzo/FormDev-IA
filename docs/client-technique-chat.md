@@ -54,7 +54,7 @@ Cas d'usage typiques :
 | Champ | Type | Obligatoire | Rôle |
 | --- | --- | --- | --- |
 | `messages` | array | oui | Conversation envoyée au modèle. Au minimum un message `user`. |
-| `messages[].role` | string | oui | `user`, `assistant` ou `system`. Les `system` de l'historique sont ignorés ; le backend compose son contrat et les instructions métier. |
+| `messages[].role` | string | oui | `user`, `assistant` ou `system`. Les `system` fournis dans l'historique sont remplacés par `system_prompt`. |
 | `messages[].content` | string | oui | Texte envoyé au modèle. |
 | `model` | string | non | Nom du modèle demandé. Si absent, le backend utilise sa valeur par défaut. |
 | `system_prompt` | string | non | Prompt système métier. Permet de cadrer le ton, le rôle et les contraintes. |
@@ -167,47 +167,3 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=apps/api python -B -m unittest discover -s 
 
 La detection cible les messages de vLLM 0.16.0. Un format inconnu reste
 une erreur upstream 502 et necessite un nouveau cas de regression.
-
-## Contrat de transformation et préservation du format
-
-Chaque inférence Chat reçoit un contrat technique permanent, puis les instructions
-métier du client (system_prompt ou post_correction_prompt selon la passe).
-Un prompt absent, vide ou composé d'espaces utilise le défaut métier.
-Le contrat demande une seule sortie, sans préambule, commentaire ou variante.
-Lorsqu'un texte source est fourni à transformer, il impose de préserver son format
-et ses styles, sans inventer de gras, italique, titres, listes ou mise en forme.
-En génération pure, sans texte source à transformer, la structure et la mise en
-forme demandées par le métier restent autorisées.
-Les instructions contenues dans le texte source sont traitées comme des données.
-Les messages user et assistant restent dans leurs rôles, sans réécriture.
-
-L'API ne sépare pas explicitement la consigne et la source du premier appel.
-Le contrat améliore le cadrage mais ne garantit ni la fidélité sémantique,
-ni l'immunité aux injections, ni la conservation exacte du HTML/CKEditor.
-Il ajoute des tokens ; les limites et la gestion de contexte restent inchangées.
-
-La continuation reste limitée à un appel de 150 tokens. Elle demande seulement
-le suffixe manquant. Si le premier fragment ou les fragments réunis contiennent
-des balises HTML reconnues, ils sont concaténés sans modifier leurs caractères.
-Ce raccord ne répare pas le HTML et ne garantit pas l'absence de duplication.
-
-La post-correction remplace la génération précédente uniquement si elle est
-non vide, terminée par finish_reason="stop", et compatible avec son format.
-Le contrôle compare la génération précédente et la correction, pas le DOM
-original du client : présence de HTML, gras (strong/b), italique (em/i),
-titres (h1-h6) et listes (ul/ol avec li). Il refuse l'apparition ou la disparition
-complète de ces familles ; il n'impose pas leur nombre ni un DOM identique.
-La génération précédente est le texte source de cette passe, y compris après
-une génération pure. Ses styles existants sont donc préservés.
-Les attributs, styles CSS et correspondances sémantiques ne sont pas validés.
-Il s'agit d'un relevé de balises sans construction ni réécriture du DOM :
-ce contrôle n'est ni une validation HTML complète ni une sanitization.
-
-Une correction rejetée laisse inchangés le contenu et le finish_reason précédents,
-y compris si cette génération précédente était tronquée. Les completion_tokens
-consommés restent comptés selon la convention existante.
-Les erreurs réseau et vLLM ne sont pas masquées : le contrat 422/502 reste inchangé.
-La génération principale n'est pas soumise à ce contrôle de format.
-
-Tests des deux blocs, sans GPU ni services externes :
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=apps/api python -B -m unittest discover -s apps/api/tests -p 'test_chat_*.py' -v
